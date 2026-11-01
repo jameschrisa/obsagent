@@ -5,8 +5,15 @@ CLI for setting up, configuring, testing and troubleshooting OBS Studio on this 
 ## Install
 
 ```
-ln -sf /Users/jchrisa/CODE/obs-agent/obsagent ~/.local/bin/obsagent
+git clone https://github.com/jameschrisa/obsagent.git && cd obsagent
+ln -sf "$PWD/obsagent" ~/.local/bin/obsagent
+
+# Claude Code: /obsagent skill and obsagent subagent
+ln -sfn "$PWD/claude/skills/obsagent" ~/.claude/skills/obsagent
+ln -sf "$PWD/claude/agents/obsagent.md" ~/.claude/agents/obsagent.md
 ```
+
+Requires macOS, OBS Studio 33+, and [uv](https://docs.astral.sh/uv/).
 
 `obsagent` is a uv script (inline deps: obsws-python, pyyaml). The symlink is resolved, so it runs from anywhere. `youtube` commands re-run themselves with the Google client libraries.
 
