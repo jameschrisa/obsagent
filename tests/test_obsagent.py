@@ -625,3 +625,23 @@ def test_screen_never_queries_property_items_and_sets_display_uuid(monkeypatch):
     assert not any(r.get("request") == "GetInputPropertiesListPropertyItems" and r.get("inputName") == "Screen" for r in reqs)
     create = [r for r in reqs if r.get("request") == "CreateInput" and r.get("inputKind") == "screen_capture"]
     assert create and create[0]["inputSettings"].get("display_uuid") == "UUID-MAIN"
+
+
+def test_key_account_names():
+    import pytest
+    from obsagent_lib import cli
+    assert cli.key_account("youtube", None) == "youtube"
+    assert cli.key_account("youtube", "default") == "youtube"
+    assert cli.key_account("youtube", "alt") == "youtube:alt"
+    with pytest.raises(cli.CliError):
+        cli.key_account("youtube", "Bad Name")
+
+
+def test_key_registry_stores_no_secrets(tmp_path, monkeypatch):
+    import json
+    from obsagent_lib import paths
+    monkeypatch.setattr(paths, "KEY_REGISTRY", tmp_path / "keys.json")
+    paths.key_registry_add("youtube:alt", "second channel")
+    data = json.loads((tmp_path / "keys.json").read_text())
+    assert data["youtube:alt"] == {"label": "second channel"}
+    assert "youtube" in paths.key_registry()

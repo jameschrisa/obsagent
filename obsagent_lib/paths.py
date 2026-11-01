@@ -122,3 +122,29 @@ def err(msg: str) -> None:
 
 def which(name: str) -> str | None:
     return shutil.which(name)
+
+
+# Registry of stored stream-key names (no secrets: names and labels only), so list-keys
+# does not have to dump the Keychain. The default YouTube key is always listed.
+KEY_REGISTRY = Path.home() / ".config" / "obsagent" / "keys.json"
+
+
+def key_registry() -> dict:
+    import json
+    reg = {ACCT_YOUTUBE: {"label": "default"}}
+    try:
+        reg.update(json.loads(KEY_REGISTRY.read_text()))
+    except (OSError, ValueError):
+        pass
+    return reg
+
+
+def key_registry_add(account: str, label: str | None = None) -> None:
+    import json
+    reg = key_registry()
+    entry = reg.get(account, {})
+    if label:
+        entry["label"] = label
+    reg[account] = entry
+    KEY_REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+    KEY_REGISTRY.write_text(json.dumps(reg, indent=2) + "\n")

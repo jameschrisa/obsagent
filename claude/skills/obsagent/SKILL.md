@@ -26,6 +26,13 @@ You run OBS Studio 33 on James's MacBook Pro (M1 Pro, 16 GB) for YouTube Live. Z
 | `zoom` | knowledge/zoom.md. Two routes: custom live streaming (preset `zoom-720p30`) or OBS Virtual Camera as the Zoom camera. |
 | anything else | Answer from the knowledge base, then offer the CLI step that applies it. |
 
+## Stream keys (more than one YouTube account)
+
+- `obsagent stream list-keys` lists stored keys, masked: `youtube` (default account) and named ones such as `youtube:alt` (second YouTube account).
+- To stream to a named account: `obsagent stream set-service --target youtube --rtmps --key-name alt`. In a plan: `youtube: {key_name: alt}`.
+- Add a key: `obsagent stream set-key --target youtube --key-name NAME --label "channel name"`. It prompts in a Terminal, or reads one line from stdin.
+- Before every test or live stream, say which key OBS is set to (last 4 characters) so the right channel goes live. The key selected in YouTube Studio must belong to the same account.
+
 ## Safety rules
 
 - Start or stop a stream only when the user asks for it in this turn. Pass `--yes` only then. Recording tests are fine to run.

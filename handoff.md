@@ -29,7 +29,11 @@ The first test (21:03) connected to `rtmps://a.rtmps.youtube.com:443/live2` and 
   - CoreAudio AAC at 128k, 48 kHz.
   - ApplyServiceSettings=false.
 - **Profile `Untitled`:** restored to the original defaults (Simple mode, x264).
-- **Stream service:** rtmp_custom to YouTube RTMPS. The key is in the Keychain (service `obsagent`, account `youtube`).
+- **Stream service:** rtmp_custom to YouTube RTMPS, currently using the default key.
+- **Stream keys** (Keychain service `obsagent`, see `obsagent stream list-keys`):
+  - `youtube`: the default account, ends `awft`. This is the one OBS uses now.
+  - `youtube:alt`: the second YouTube account, ends `8zpy`, added 2026-11-01. Switch with `obsagent stream set-service --target youtube --rtmps --key-name alt`.
+  - The `youtube:alt` key was pasted into a chat. Resetting it in YouTube Studio is recommended, followed by re-storing it with `set-key --key-name alt`.
 - **WebSocket:** port 4455, auth on. The password is in the Keychain (service `obsagent`, account `obs-websocket`).
 - **Scenes** (collection "Untitled"):
   - `Camera`: StreamCam full frame, plus StreamCam Mic.

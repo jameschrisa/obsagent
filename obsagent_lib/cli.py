@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import re
 import json
 import os
 import sys
@@ -62,9 +63,13 @@ def build_parser() -> argparse.ArgumentParser:
     ss.add_argument("--rtmps", action="store_true")
     ss.add_argument("--key-from", default="keychain", choices=["keychain", "env", "prompt"])
     ss.add_argument("--server", help="RTMP URL (required for zoom/custom)")
+    ss.add_argument("--key-name", help="named key, e.g. a second YouTube channel (see `stream list-keys`)")
     ss.add_argument("--dry-run", action="store_true")
-    sk = st.add_parser("set-key", parents=[common], help="store a stream key in Keychain (prompts)")
+    sk = st.add_parser("set-key", parents=[common], help="store a stream key in Keychain (prompts, or reads stdin)")
     sk.add_argument("--target", default="youtube", choices=["youtube", "zoom", "custom"])
+    sk.add_argument("--key-name", help="store under a name, e.g. a second YouTube channel; omit for the default key")
+    sk.add_argument("--label", help="free-text note shown by list-keys, e.g. the channel name")
+    st.add_parser("list-keys", parents=[common], help="list stored stream keys (masked)")
 
     pl = sub.add_parser("plan").add_subparsers(dest="sub", required=True)
     for name in ("new", "show", "validate", "apply", "export"):
@@ -266,12 +271,34 @@ def cmd_profile(a):
     return 0 if result.get("verified", True) else 1
 
 
+def key_account(target: str, name: str | None) -> str:
+    """Keychain account: `youtube` for the default key, `youtube:NAME` for a named one."""
+    base = {"youtube": paths.ACCT_YOUTUBE}.get(target, target)
+    if not name or name == "default":
+        return base
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", name):
+        raise CliError("--key-name must be lowercase letters, digits and hyphens (max 32)")
+    return f"{base}:{name}"
+
+
 def cmd_stream(a):
-    account = {"youtube": paths.ACCT_YOUTUBE}.get(a.target, a.target)
+    if a.sub == "list-keys":
+        rows = []
+        for acct, meta in sorted(paths.key_registry().items()):
+            k = paths.keychain_get(acct)
+            rows.append({"account": acct, "label": meta.get("label", ""), "stored": bool(k),
+                         "key": paths.mask(k) if k else None})
+        out({"keys": rows}, a, kv_text)
+        return 0
+    account = key_account(a.target, getattr(a, "key_name", None))
     if a.sub == "set-key":
-        key = getpass.getpass(f"{a.target} stream key (input hidden): ").strip()
+        if sys.stdin.isatty():
+            key = getpass.getpass(f"{account} stream key (input hidden): ").strip()
+        else:
+            key = sys.stdin.readline().strip()
         if not key or not paths.keychain_set(account, key):
             raise CliError("key not stored")
+        paths.key_registry_add(account, a.label)
         out({"stored": True, "account": account, "key": paths.mask(key)}, a, kv_text)
         return 0
     try:
@@ -322,7 +349,7 @@ def cmd_plan(a):
                     raise CliError(str(e))
             # stream service (needs websocket)
             if plan["target"] in ("youtube",):
-                account = paths.ACCT_YOUTUBE
+                account = key_account("youtube", (plan.get("youtube") or {}).get("key_name"))
                 try:
                     key = stream.resolve_key(a.key_from, account)
                     if cl is not None:
