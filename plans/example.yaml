@@ -1,0 +1,35 @@
+# Show plan. Copy with `obsagent plan new NAME`, edit, then `obsagent plan apply NAME --dry-run`.
+title: Weekly livestream
+date: 2026-11-07
+time: "10:00"
+timezone: America/Los_Angeles
+target: youtube            # youtube | zoom | custom
+preset: youtube-1080p30    # see `obsagent preset list`
+profile: Weekly Show       # OBS profile name (created if missing)
+scenes:
+  - name: Talking head
+    sources: [camera, mic]
+  - name: Screen share
+    sources: [screen, mic, camera]
+sources:
+  camera:
+    device: Logitech StreamCam   # chosen by hand in OBS the first time; recorded here for the checklist
+  mic:
+    device: Logitech StreamCam
+  screen:
+    display: main
+  browser:
+    url: ""                      # optional overlay page
+checklist:
+  - Camera framing and lighting checked
+  - Mic level peaks between -12 and -6 dB
+  - Screen Recording permission granted to OBS
+  - Notifications off (Do Not Disturb)
+  - Stream key stored in Keychain
+  - Test stream to an unlisted broadcast for 2 minutes, watch ws monitor
+youtube:
+  title: Weekly livestream
+  description: What we cover this week.
+  privacy: unlisted          # public | unlisted | private
+  latency: low               # normal | low | ultraLow
+  rtmps: true

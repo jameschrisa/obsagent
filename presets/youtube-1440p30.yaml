@@ -1,0 +1,18 @@
+name: youtube-1440p30
+description: YouTube Live 1440p30.
+target: youtube
+encoder: videotoolbox_h264
+width: 2560
+height: 1440
+fps: 30
+video_bitrate_kbps: 21000
+rate_control: CBR
+keyint_sec: 2
+profile: high
+bframes: false
+audio_bitrate_kbps: 128
+sample_rate: 48000
+channels: Stereo
+source: https://support.google.com/youtube/answer/2853702
+notes: YouTube recommended H.264 bitrate (HEVC column for -hevc), checked 2026-10-31 in knowledge/youtube.md. Lower it to fit upload with --bitrate.
+warnings: ["1440p adds GPU and encoder load on an M1 Pro (16 GB). Watch render lag with ws monitor.", "Needs about 16+ Mbps of stable upload."]

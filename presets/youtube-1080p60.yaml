@@ -1,0 +1,18 @@
+name: youtube-1080p60
+description: YouTube Live 1080p60, for motion-heavy content. Needs about 26 Mbps of stable upload.
+target: youtube
+encoder: videotoolbox_h264
+width: 1920
+height: 1080
+fps: 60
+video_bitrate_kbps: 17000
+rate_control: CBR
+keyint_sec: 2
+profile: high
+bframes: false
+audio_bitrate_kbps: 128
+sample_rate: 48000
+channels: Stereo
+source: https://support.google.com/youtube/answer/2853702
+notes: YouTube recommended H.264 bitrate (HEVC column for -hevc), checked 2026-10-31 in knowledge/youtube.md. Lower it to fit upload with --bitrate.
+warnings: []

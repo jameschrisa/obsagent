@@ -1,0 +1,19 @@
+name: x264-1080p30-fallback
+description: Software x264 fallback, 1080p30. Heavier on CPU than VideoToolbox.
+target: youtube
+encoder: x264
+width: 1920
+height: 1080
+fps: 30
+video_bitrate_kbps: 8000
+rate_control: CBR
+keyint_sec: 2
+profile: high
+bframes: false
+audio_bitrate_kbps: 160
+sample_rate: 48000
+channels: Stereo
+source: https://support.google.com/youtube/answer/2853702
+notes: Use only if VideoToolbox misbehaves. x264 preset veryfast.
+warnings:
+  - Software encoding on an M1 Pro will use many CPU cores; watch encode overload.

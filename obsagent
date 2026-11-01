@@ -1,0 +1,20 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["obsws-python", "pyyaml"]
+# ///
+"""obsagent: set up, configure, test and troubleshoot OBS Studio on macOS (YouTube Live first).
+
+google-api-python-client and google-auth-oauthlib are only needed for `youtube` commands and are
+imported lazily; run those with: uv run --with google-api-python-client --with google-auth-oauthlib
+(the `youtube` subcommand re-executes itself with those deps automatically).
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from obsagent_lib.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())

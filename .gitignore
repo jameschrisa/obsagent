@@ -1,0 +1,9 @@
+src_ref/
+__pycache__/
+.pytest_cache/
+*.token.json
+.profiles-backup-*/
+.DS_Store
+client_secret*.json
+token.json
+*.ips

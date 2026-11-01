@@ -1,0 +1,19 @@
+name: zoom-720p30
+description: Zoom webinar via custom RTMP, 720p30 (future target).
+target: zoom
+encoder: videotoolbox_h264
+width: 1280
+height: 720
+fps: 30
+video_bitrate_kbps: 3000
+rate_control: CBR
+keyint_sec: 2
+profile: high
+bframes: false
+audio_bitrate_kbps: 128
+sample_rate: 48000
+channels: Stereo
+source: https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0067931
+notes: Zoom custom live streaming service takes an RTMP URL and key from the webinar settings. Verify against knowledge/zoom.md.
+warnings:
+  - Zoom custom streaming caps at 720p for most plans.

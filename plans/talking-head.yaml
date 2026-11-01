@@ -1,0 +1,37 @@
+# Talking head with screen share and camera inset. Apply: obsagent plan apply talking-head --dry-run
+title: Talking head show
+target: youtube
+preset: youtube-1080p60
+profile: obsagent-youtube-1080p60
+scenes:
+  - name: Camera
+    sources:
+      - {source: camera, layout: fill}
+  - name: Screen + camera
+    sources:
+      - {source: screen, layout: fill}
+      - {source: camera, layout: inset, corner: bottom-right, width_pct: 25, margin_px: 40}
+sources:
+  camera:
+    name: StreamCam
+    device: Logitech StreamCam      # matched by name against the OBS device list
+  mic:
+    name: StreamCam Mic
+    device: Logitech StreamCam
+    global: true                    # global audio source (Settings > Audio), heard in every scene
+  screen:
+    name: Screen
+    display: main
+replace_default_mic: true           # disable the default "Mic/Aux" so the MacBook mic does not double up
+checklist:
+  - Screen & System Audio Recording, Camera and Microphone allowed for OBS
+  - Camera framing and lighting checked
+  - Mic level peaks between -12 and -6 dB
+  - Do Not Disturb on
+  - 60-second preflight recording reviewed
+  - Unlisted 2-minute test stream watched with obsagent ws monitor
+youtube:
+  title: Talking head show
+  privacy: unlisted
+  latency: low
+  rtmps: true

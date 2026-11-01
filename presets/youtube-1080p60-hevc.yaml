@@ -1,0 +1,19 @@
+name: youtube-1080p60-hevc
+description: YouTube Live 1080p60 with HEVC (VideoToolbox) over enhanced RTMP. Experimental.
+target: youtube
+encoder: videotoolbox_hevc
+width: 1920
+height: 1080
+fps: 60
+video_bitrate_kbps: 12000
+rate_control: CBR
+keyint_sec: 2
+profile: main
+bframes: false
+audio_bitrate_kbps: 128
+sample_rate: 48000
+channels: Stereo
+source: https://support.google.com/youtube/answer/2853702
+notes: YouTube recommended H.264 bitrate (HEVC column for -hevc), checked 2026-10-31 in knowledge/youtube.md. Lower it to fit upload with --bitrate.
+warnings:
+  - HEVC live ingest is newer; verify in YouTube Studio that the stream health is good before relying on it.
