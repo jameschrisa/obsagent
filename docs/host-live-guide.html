@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Running a live show: obsagent and the pod producer</title>
+<style>
+body { background: #ffffff; color: #1a1a1a; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.45; margin: 0; }
+.container { max-width: 820px; margin: 0 auto; padding: 24px 16px; }
+h1 { font-size: 26px; margin: 0 0 10px 0; }
+h2 { font-size: 19px; margin: 24px 0 6px 0; border-bottom: 1px solid #cccccc; padding-bottom: 3px; }
+h3 { font-size: 16px; margin: 16px 0 4px 0; }
+p, li { margin: 5px 0; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+th, td { border: 1px solid #999999; padding: 5px 8px; text-align: left; vertical-align: top; }
+th { background: #eeeeee; }
+code { font-family: Menlo, Courier, monospace; font-size: 13px; }
+mark { background: #fff3a3; font-weight: bold; padding: 0 3px; }
+.callout { border: 2px solid #b00020; background: #fdf0f0; margin: 14px 0; padding: 6px 14px; }
+a { color: #0b5cad; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Running a live show: obsagent and the pod producer</h1>
+<p>A step-by-step guide for you, the host, on your Mac (M1 Pro, OBS 33, Logitech StreamCam). Commands run from <code>~/CODE/obs-agent</code>, or from anywhere if <code>obsagent</code> and <code>podproducer</code> are on your PATH. Replace <code>talking-head</code> with your show's plan name.</p>
+
+<div class="callout">
+<p><strong>The agents never start or stop a stream, and never send email, unless you ask in that same message.</strong> Invites are Mail.app drafts by default. Stream-starting commands need <code>--yes</code>.</p>
+</div>
+
+<h2>1. How the pieces fit</h2>
+<table>
+<tr><th>Tool</th><th>What it does</th><th>How to call it</th></tr>
+<tr><td>OBS Studio</td><td>Encodes and sends the video. Holds the scenes (Camera, Screen + camera, Panel, one close-up per guest).</td><td>The OBS app.</td></tr>
+<tr><td>obsagent</td><td>Sets up OBS, applies the show plan, emails invites, runs preflight, watches live health, triages problems, wraps up.</td><td>Claude Code: <code>/obsagent ...</code>. Terminal: <code>obsagent ...</code></td></tr>
+<tr><td>Pod producer</td><td>Listens to the guests through BlackHole, transcribes locally with whisper, and sends short playful cues to a Producer dock in OBS. Viewers never see it.</td><td>Claude Code: <code>/pod-producer ...</code>. Terminal: <code>podproducer ...</code></td></tr>
+<tr><td>VDO.Ninja</td><td>Brings remote guests (up to 4) into OBS through their browsers. Free, no accounts.</td><td>Personal guest links, plus your director link. Managed with <code>obsagent guests ...</code></td></tr>
+</table>
+
+<h2>2. Days before the show</h2>
+<ol>
+<li><strong>Plan the show.</strong> Edit <code>plans/talking-head.yaml</code> (or <code>obsagent plan new</code>). Set <code>show_time</code>, <code>tech_check</code>, <code>host_contact</code> and <code>youtube.watch_url</code>, which fill the guest guide. Check it with <code>obsagent plan validate talking-head</code>.</li>
+<li><strong>Add guests</strong> (up to 4, five people on screen with you): <code>obsagent guests add talking-head --name "Ann" --email ann@example.com</code>. The first add creates the room. To add an email later: <code>obsagent guests set-email</code>. Remove the "Test Guest" from the roster before a real show: <code>obsagent guests remove talking-head "Test Guest"</code>.</li>
+<li><strong>Write the guides:</strong> <code>obsagent guests guide talking-head</code>. Each guest gets a personal guide in <code>~/Documents/obsagent/guides/</code>. Anything still missing is highlighted yellow.</li>
+<li><strong>Send invites.</strong> One-time sender setup: <code>obsagent guests senders</code>, then <code>obsagent guests set-sender james@ausvrn.com --name "James"</code>. Then <code>obsagent guests invite talking-head --all --attach-guide</code>. This opens drafts in Mail.app for you to review. Sending needs <code>--send</code>, and only when you say so. Guests should always use the newest email.</li>
+<li><strong>Pod producer prep:</strong> <code>podproducer prep talking-head</code> adds a <code>producer:</code> block to the plan. In Claude Code, <code>/pod-producer prep talking-head</code> also researches each guest (public, professional facts, with sources) and drafts a run of show with minutes per segment, 10-15 playful questions, must_ask and avoid lists, and a cold open. It will not overwrite what you wrote. Read it and edit.</li>
+<li><strong>Tell guests about the AI transcription.</strong> The guest guide covers it. Guests can ask you to switch it off.</li>
+<li><strong>Apply the plan:</strong> <code>obsagent plan apply talking-head --dry-run</code>, read the changes, then <code>obsagent plan apply talking-head</code>. It builds the Guest N sources, the Panel scene and the solo scenes, and locks the items.</li>
+<li><strong>Hold the tech check</strong> a day ahead with each guest, in the same room and on the same gear they will use.</li>
+</ol>
+
+<h2>3. Show day, 30-60 minutes before</h2>
+<ol>
+<li>Plug in power. Turn off Low Power Mode. Turn on Do Not Disturb. Close other apps and clean up your screen.</li>
+<li>Open OBS (quit and relaunch it for a clean start). Close any open dialogs, because they can block commands. Switch to a show scene such as Camera.</li>
+<li>Run the checks: <code>/obsagent prep talking-head</code> in Claude Code, or in the terminal <code>obsagent preflight talking-head</code> (add <code>--record 30</code> for a 30-second test clip). Preflight never streams. Fix every FAIL and understand every WARN.</li>
+<li>Run <code>podproducer check</code>. It confirms the audio devices, whisper model, the claude CLI and OBS monitoring. Fix any FAIL line.</li>
+<li>Put on headphones before OBS makes sound. Always wear them, or the guests hear echo.</li>
+<li>Open your VDO.Ninja director link in a browser tab: <code>obsagent guests links talking-head --reveal</code>. Turn on <strong>Director will also be a performer</strong> (or add <code>&amp;showdirector</code> to the link) so guests see and hear you. Keep this tab open all show. Never paste links into a public place.</li>
+<li>Take a look at each scene: <code>obsagent ws snapshot Panel</code>. A guest source near 0% visible pixels means a blank tile (see section 7).</li>
+</ol>
+
+<h2>4. One-time OBS setup for the Producer dock and audio</h2>
+<h3>Producer dock</h3>
+<p>In OBS, open Docks &gt; Custom Browser Docks. Name it <strong>Producer</strong> and set the URL to <code>http://127.0.0.1:8765</code>. The dock is for you only. Never add it to a scene.</p>
+<h3>Audio routing for the producer</h3>
+<ol>
+<li>Install BlackHole once: <code>brew install --cask blackhole-2ch</code>, then restart audio or reboot.</li>
+<li>OBS Settings &gt; Audio &gt; Advanced &gt; Monitoring Device = <strong>BlackHole 2ch</strong>.</li>
+<li>For each guest source, open Advanced Audio Properties and set Audio Monitoring to <strong>Monitor and Output</strong>. <code>plan apply</code> sets this from the plan's <code>monitor: monitor_and_output</code>.</li>
+<li>Do not monitor your own mic. The host track comes straight from the StreamCam mic.</li>
+</ol>
+<h3>Browser Source Hardware Acceleration</h3>
+<div class="callout">
+<p>Turn off Browser Source Hardware Acceleration in OBS Settings &gt; Advanced, then restart OBS. If it stays on, guest tiles render blank on this Mac. <code>obsagent doctor</code> warns about it as <code>browser_hwaccel</code>.</p>
+</div>
+
+<h2>5. Going live</h2>
+<ol>
+<li><strong>YouTube Studio:</strong> Create &gt; Go live &gt; Stream tab. Open Studio's Live Control Room on a second browser or device.</li>
+<li><strong>Check which stream key is active.</strong> Run <code>obsagent stream list-keys</code>. <code>youtube</code> is the default account and <code>youtube:alt</code> is the second account. Note the last 4 characters. To switch to the alt account: <code>obsagent stream set-service --target youtube --rtmps --key-name alt</code>. To go back to the default: <code>obsagent stream set-service --target youtube --rtmps --key-from keychain</code>. The key in Studio must belong to the same account.</li>
+<li><strong>Start streaming in OBS</strong> about 5-10 minutes early, and watch the Control Room until it shows receiving data with good health. Put a "starting soon" scene up first. (A Claude-run start needs you to ask for it: <code>obsagent ws start-stream --yes</code>.)</li>
+<li><strong>Start the producer:</strong> <code>podproducer run talking-head</code> in a terminal, or <code>/pod-producer live talking-head</code>. Before it starts, make sure every guest has been told about the AI transcription. Options: <code>--interval 40</code>, <code>--model sonnet</code>, <code>--keep-audio</code>.</li>
+<li><strong>Start live monitoring:</strong> <code>/obsagent live</code>, or <code>obsagent ws monitor --guests talking-head --log --seconds 120</code>.</li>
+<li>Click Go live in Studio and confirm the public watch page shows video.</li>
+</ol>
+
+<h2>6. During the show</h2>
+<h3>Switching scenes</h3>
+<p>Click the scene in OBS, or run <code>obsagent ws scene "Panel"</code> (or <code>/obsagent scene Panel</code>). The command reads the program scene back and tells you if it did not switch. Use <code>Guest: NAME</code> for a close-up of one guest.</p>
+<h3>Reading cues</h3>
+<p>Cues appear in the Producer dock. They are short, playful suggestions. Treat them as suggestions: ignore any that do not fit, and mark each Done or Skip as you go. Cue types:</p>
+<table>
+<tr><th>Type</th><th>Example</th></tr>
+<tr><td>follow_up</td><td>"She just said she quit a job over a spreadsheet. Ask what the spreadsheet did."</td></tr>
+<tr><td>bring_in</td><td>"Dan has been quiet for ten minutes. Toss him the budget question."</td></tr>
+<tr><td>pace</td><td>"You are 8 minutes deep on one story. A quick fun question could reset the room."</td></tr>
+<tr><td>segue</td><td>"That is a clean bridge into the next segment."</td></tr>
+<tr><td>fun</td><td>"Ask which tool they would throw off a cliff first."</td></tr>
+<tr><td>fact_check</td><td>"That number sounds high. Worth a gentle double-check."</td></tr>
+<tr><td>time</td><td>"Segment two is 4 minutes over. Wrap in a few."</td></tr>
+</table>
+<h3>What the live monitor flags</h3>
+<ul>
+<li>Network dropped frames above 1%.</li>
+<li>Encoding lag (the encoder skipping frames) and rendering lag.</li>
+<li>Bitrate well below the target.</li>
+<li>A guest tile that goes blank (a connected guest blank for 2 samples).</li>
+</ul>
+<p>Check it every few minutes. Mute your mic when you are off air.</p>
+
+<h2>7. Quick fixes for live problems</h2>
+<table>
+<tr><th>Problem</th><th>Do this</th></tr>
+<tr><td>Guest tile blank</td><td>Run <code>obsagent guests refresh talking-head --name NAME</code>. If the guest shows in your director tab but not OBS, run <code>obsagent plan apply talking-head</code> again. If it keeps happening, check that Browser Source Hardware Acceleration is off.</td></tr>
+<tr><td>Guest audio missing</td><td>Ask the guest to check their mic in the browser and that they are not muted in your director tab. In OBS, open the source properties and confirm "Control audio via OBS" is ticked, and watch the guest's meter in the mixer.</td></tr>
+<tr><td>Guest cannot hear you</td><td>Your director tab needs "Director will also be a performer" on, with the mic allowed.</td></tr>
+<tr><td>Echo</td><td>Someone is on speakers. Mute each guest in the director tab in turn to find them, and ask them to put on headphones. Check nobody has a second tab open.</td></tr>
+<tr><td>Dropped frames</td><td>Run <code>/obsagent triage dropped frames</code>. Use wired Ethernet, or lower the bitrate to about 75% of stable upload. Dynamic Bitrate is a last-resort mask.</td></tr>
+<tr><td>Encoder overloaded</td><td>Run <code>/obsagent triage encoding overloaded</code>. Close GPU-heavy apps, plug in power, turn off Low Power Mode, then lower the output resolution before lowering fps.</td></tr>
+<tr><td>YouTube shows no data</td><td>Run <code>/obsagent triage youtube no data</code>. Confirm OBS is streaming, that the stream key matches the Studio stream (<code>obsagent stream list-keys</code>), and wait 10-30 seconds.</td></tr>
+<tr><td>Tiles moved or resized</td><td>Run <code>obsagent plan apply talking-head</code>. It restores positions and locks them.</td></tr>
+<tr><td>Producer cues stopped</td><td>Check the terminal running <code>podproducer run</code> is still alive, and that the Producer dock URL is <code>http://127.0.0.1:8765</code>. Run <code>podproducer check</code> in a second terminal. Make sure guest sources are on Monitor and Output and the monitoring device is BlackHole 2ch. Restart <code>podproducer run talking-head</code> if needed. It starts a new session.</td></tr>
+<tr><td>Anything else</td><td><code>obsagent triage collect --json</code> gathers masked log matches, stats, settings and crash names, then <code>/obsagent triage SYMPTOM</code> walks the decision tree.</td></tr>
+</table>
+<p>If the stream drops, OBS reconnects on its own. Do not end the broadcast in Studio unless it stays down for more than a minute.</p>
+
+<h2>8. After the show</h2>
+<ol>
+<li>End the broadcast in YouTube Studio, then stop streaming in OBS.</li>
+<li>Stop the producer with Ctrl-C in its terminal.</li>
+<li>Write the recap: <code>podproducer sessions</code> to find the session, then <code>podproducer recap SESSION --show talking-head</code>. It writes <code>recap.md</code> with a summary, 5-8 clip moments with timestamps, show notes and three title ideas.</li>
+<li>Wrap up the OBS side: <code>/obsagent postshow</code>, or <code>obsagent show postshow talking-head</code>. Add <code>--rotate</code> if the guests will not return. That kills every old guest link, so re-run <code>obsagent plan apply talking-head</code> and re-invite if you need them again.</li>
+<li>Remove guests you no longer need: <code>obsagent guests remove talking-head "Ann"</code>. Their solo scene stays until you delete it in OBS.</li>
+<li>If you recorded, confirm the file plays. In YouTube, check the replay, privacy, thumbnail and chapters.</li>
+<li>Undo one-off changes such as Low Power Mode or Do Not Disturb.</li>
+</ol>
+
+<h2>9. One-page checklist</h2>
+<h3>Before</h3>
+<ul>
+<li>Plan validated and applied. Guests added (up to 4), "Test Guest" removed.</li>
+<li>Invites sent from the right address. Guests know to use the newest email.</li>
+<li>Tech checks done. Guests know about the AI transcription.</li>
+<li>Producer brief filled in: run of show, questions, must_ask, avoid.</li>
+<li>Producer dock added in OBS. Monitoring device is BlackHole 2ch. Browser Source Hardware Acceleration is off.</li>
+<li>Power in, Do Not Disturb on, headphones on, OBS freshly relaunched, dialogs closed.</li>
+<li><code>obsagent preflight talking-head</code> clean. <code>podproducer check</code> clean.</li>
+<li>Director link open with "Director will also be a performer".</li>
+<li>Stream key confirmed (<code>obsagent stream list-keys</code>). Control Room open on a second device.</li>
+</ul>
+<h3>During</h3>
+<ul>
+<li>Start OBS stream early, wait for good health, then Go live.</li>
+<li><code>podproducer run talking-head</code> running. Dock open.</li>
+<li><code>obsagent ws monitor --guests talking-head --log</code> every few minutes.</li>
+<li>Cues are suggestions. Mark Done or Skip.</li>
+<li>Mute your mic when off air.</li>
+</ul>
+<h3>After</h3>
+<ul>
+<li>End broadcast, stop OBS stream, stop the producer.</li>
+<li><code>podproducer recap SESSION --show talking-head</code></li>
+<li><code>obsagent show postshow talking-head</code> (add <code>--rotate</code> if guests will not return).</li>
+<li>Remove guests you no longer need. Check the YouTube replay.</li>
+</ul>
+
+</div>
+</body>
+</html>
