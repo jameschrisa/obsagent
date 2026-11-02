@@ -28,7 +28,13 @@ LAYOUTS = {"fill", "inset", "tile"}
 CORNERS = {"top-left", "top-right", "bottom-left", "bottom-right"}
 ENTRY_KEYS = {"source", "layout", "corner", "width_pct", "margin_px"}
 TILE_KEYS = {"x", "y", "w", "h"}  # only with layout: tile (explicit rectangle in canvas pixels)
-GUEST_KEYS = {"max", "panel_scene", "solo_scenes"}
+GUEST_KEYS = {"max", "panel_scene", "solo_scenes", "monitor"}
+# guests.monitor: audio monitoring on guest inputs only, so the pod producer hears guests via BlackHole.
+GUEST_MONITOR = {
+    "monitor_and_output": "OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT",
+    "monitor_only": "OBS_MONITORING_TYPE_MONITOR_ONLY",
+    "none": "OBS_MONITORING_TYPE_NONE",
+}
 BG_KEYS = {"image", "color", "name", "scenes"}
 BG_NAME = "Background"
 BG_IMAGE_KIND = "image_source"
@@ -242,7 +248,7 @@ def validate_guests(plan: dict) -> list[str]:
     if g is None:
         return errs
     if not isinstance(g, dict):
-        return errs + ["guests must be a mapping (max, panel_scene, solo_scenes)"]
+        return errs + ["guests must be a mapping (max, panel_scene, solo_scenes, monitor)"]
     extra = set(g) - GUEST_KEYS
     if extra:
         errs.append(f"guests: unknown keys {sorted(extra)}")
@@ -253,6 +259,8 @@ def validate_guests(plan: dict) -> list[str]:
         errs.append("guests.panel_scene must be a non-empty string")
     if "solo_scenes" in g and not isinstance(g["solo_scenes"], bool):
         errs.append("guests.solo_scenes must be true or false")
+    if "monitor" in g and g["monitor"] not in GUEST_MONITOR:
+        errs.append(f"guests.monitor must be one of {', '.join(GUEST_MONITOR)}")
     srcs = plan.get("sources") or {}
     for need in ("camera", "mic"):
         if need not in srcs:
@@ -620,6 +628,8 @@ def _apply_guests(plan, gcfg, ctx, run, cl, canvas, notes, existing_scenes, pres
     wanted = {guest_input_name(g) for g in roster}
     panel = gcfg.get("panel_scene") or "Panel"
     solo = bool(gcfg.get("solo_scenes", True))
+    mon_type = GUEST_MONITOR[gcfg.get("monitor", "monitor_and_output")]
+    monitored: set[str] = set()
     made: list[dict] = []
 
     def ensure_scene(name):
@@ -639,11 +649,19 @@ def _apply_guests(plan, gcfg, ctx, run, cl, canvas, notes, existing_scenes, pres
         masked = guests.obs_link(state, g, guests.MASK)
         st = {"url": real, "width": 1920, "height": 1080, "reroute_audio": True}
         shown = {**st, "url": masked}
+        def set_monitor():
+            # guest inputs only; once per input per apply
+            if name not in monitored:
+                run.do("SetInputAudioMonitorType", "set_input_audio_monitor_type", name, mon_type,
+                       inputName=name, monitorType=mon_type)
+                monitored.add(name)
+
         if name in present_inputs:
             if name not in done_inputs:
                 run.do("SetInputSettings", "set_input_settings", name, st, True, inputName=name,
                        inputSettings=shown, overlay=True)
                 done_inputs.add(name)
+            set_monitor()
             if name in sm:
                 return sm[name]
             resp = run.do("CreateSceneItem", "create_scene_item", scene, name, True, sceneName=scene, sourceName=name)
@@ -652,6 +670,7 @@ def _apply_guests(plan, gcfg, ctx, run, cl, canvas, notes, existing_scenes, pres
                           inputName=name, inputKind=GUEST_KIND, inputSettings=shown)
             present_inputs.add(name)
             done_inputs.add(name)
+            set_monitor()
         sm[name] = ws._g(resp, "scene_item_id") if resp is not None else None
         if sm[name] is None and run.live:
             sm.update(_item_map(cl, scene))

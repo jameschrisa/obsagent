@@ -44,6 +44,7 @@ guests:
   max: 3
   panel_scene: "Panel"
   solo_scenes: true
+  monitor: monitor_and_output   # guest audio is monitored so the pod producer hears guests via BlackHole
 # Optional show details, used to fill the guest guide (quote the values):
 # show_time: "Thursday 6 Nov, 7:00 PM Pacific"
 # tech_check: "Wednesday 5 Nov, 5:00 PM Pacific"

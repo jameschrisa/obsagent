@@ -51,7 +51,8 @@ def ready_client():
                     inputs=[("Mic", "coreaudio_input_capture"), ("Mic/Aux", "coreaudio_input_capture"),
                             ("Background", "color_source_v3"), (GUEST1, "browser_source")])
     cl.muted["Mic/Aux"] = True
-    cl.scene_items["Camera"] = [{"sceneItemId": 1, "sourceName": "Background", "sceneItemIndex": 0}]
+    cl.scene_items["Camera"] = [{"sceneItemId": 1, "sourceName": "Background", "sceneItemIndex": 0},
+                                {"sceneItemId": 2, "sourceName": "Mic", "sceneItemIndex": 1}]
     return cl
 
 
@@ -252,6 +253,26 @@ def test_preflight_guest_blank_waiting_and_warnings(env, monkeypatch, capsys):
     assert rows["mic_aux"]["status"] == "warn" and rows["host_mic"]["status"] == "warn"
     assert rows["stream_service"]["status"] == "warn" and "zzzz" not in json.dumps(rep["rows"])
     cl.stats_disk = None
+
+
+def test_preflight_default_scene_skips_mic_level(env, monkeypatch, capsys):
+    cl = ready_client()
+    cl.current_scene = "Scene"
+    cl.scenes.append("Scene")
+    sampled = []
+    monkeypatch.setattr(ws, "sample_input_level", lambda n, s: sampled.append(n) or -90.0)
+    rc, rep = preflight(env, monkeypatch, capsys, cl)
+    rows = by_id(rep["rows"])
+    assert rows["program_scene"]["status"] == "warn"
+    assert "Program scene is 'Scene', not a show scene" in rows["program_scene"]["summary"]
+    assert rows["program_scene"]["fix"] == "Run `obsagent ws scene Camera`."
+    cl.current_scene = "Camera"
+    cl.scene_items["Camera"] = [i for i in cl.scene_items["Camera"] if i["sourceName"] != "Mic"]
+    rc, rep = preflight(env, monkeypatch, capsys, cl)
+    rows = by_id(rep["rows"])
+    assert rows["host_mic"]["status"] == "info"
+    assert "not in program scene 'Camera'" in rows["host_mic"]["summary"]
+    assert sampled == []
 
 
 def test_preflight_low_disk_and_meter_unavailable(env, monkeypatch, capsys):

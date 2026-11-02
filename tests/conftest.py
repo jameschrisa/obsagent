@@ -39,6 +39,7 @@ class FakeClient:
                         "device_id": [{"itemName": "Logitech StreamCam", "itemValue": "m1"}]}
         self.settings = {}
         self.muted = {}
+        self.monitor_types = {}  # input name -> OBS monitoring type
         self.current_scene = None
         self.next_id = 1
         self.source_size = (1280, 720)
@@ -188,6 +189,10 @@ class FakeClient:
 
     def get_input_mute(self, name):
         return NS(input_muted=self.muted.get(name, False))
+
+    def set_input_audio_monitor_type(self, name, mon_type):
+        self._c("set_input_audio_monitor_type", name, mon_type)
+        self.monitor_types[name] = mon_type
 
     def set_current_program_scene(self, name):
         self._c("set_current_program_scene", name)

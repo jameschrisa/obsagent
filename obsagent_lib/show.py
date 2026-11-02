@@ -65,6 +65,14 @@ def _row(rows, *a, **k):
     rows.append(chk(*a, **k))
 
 
+def _scene_sources(cl, scene: str) -> set:
+    try:
+        items = ws._g(cl.get_scene_item_list(scene), "scene_items", []) or []
+    except Exception:
+        items = []
+    return {ws._g(i, "sourceName") for i in items}
+
+
 def run_preflight(plan_name: str, cl, record: int = 0, level_fn=None, sleep=time.sleep) -> dict:
     rows = list(doctor.plan_checks(plan_name))
     rows.append(doctor.check_browser_hwaccel())
@@ -103,6 +111,14 @@ def run_preflight(plan_name: str, cl, record: int = 0, level_fn=None, sleep=time
         _row(rows, "scenes", "fail", "Missing scenes: " + ", ".join(missing), fix=f"Run `obsagent plan apply {plan_name}`.")
     else:
         _row(rows, "scenes", "ok", f"All {len(expected_scenes(plan, roster))} plan scenes exist")
+
+    cur_scene = ws.current_scene(cl)
+    show_scenes = expected_scenes(plan, roster)
+    if cur_scene is not None and cur_scene not in show_scenes:
+        _row(rows, "program_scene", "warn", f"Program scene is {cur_scene!r}, not a show scene",
+             fix=f"Run `obsagent ws scene {show_scenes[0]}`.")
+    else:
+        _row(rows, "program_scene", "ok", f"Program scene is {cur_scene!r}")
 
     bg = plan.get("background")
     if isinstance(bg, dict):
@@ -146,6 +162,8 @@ def run_preflight(plan_name: str, cl, record: int = 0, level_fn=None, sleep=time
             _row(rows, "host_mic", "fail", f"Host mic input {mic!r} not in OBS", fix=f"Run `obsagent plan apply {plan_name}`.")
         elif bool(ws._g(cl.get_input_mute(mic), "input_muted")):
             _row(rows, "host_mic", "fail", f"Host mic {mic!r} is muted", fix="Unmute it in the OBS mixer.")
+        elif cur_scene is not None and mic not in _scene_sources(cl, cur_scene):
+            _row(rows, "host_mic", "info", f"Host mic level not sampled: {mic!r} is not in program scene {cur_scene!r}")
         else:
             lvl = (level_fn or ws.sample_input_level)(mic, 3.0)
             if lvl is None:

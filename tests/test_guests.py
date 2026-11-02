@@ -410,3 +410,39 @@ def test_template_has_no_dashes():
 def test_senders_lists(mail, capsys):
     rc, o = run(["guests", "senders"], capsys)
     assert rc == 0 and "jchrisa@icloud.com  (iCloud)" in o
+
+
+def test_guest_monitoring_default_guests_only(env):
+    guests.add_guest("show", "Ann")
+    guests.add_guest("show", "Bob")
+    cl = _client()
+    r = plans.apply_plan(_plan(), cl, sleep=lambda s: None, guest_ctx=_ctx())
+    mon = "OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT"
+    assert cl.monitor_types == {"Guest 1: Ann": mon, "Guest 2: Bob": mon}
+    sent = [q for q in r["requests"] if q["request"] == "SetInputAudioMonitorType"]
+    assert {q["inputName"] for q in sent} == {"Guest 1: Ann", "Guest 2: Bob"}
+    assert all(q["monitorType"] == mon for q in sent)
+    # host mic and other non-guest inputs are never touched
+    assert "StreamCam Mic" not in cl.monitor_types and "StreamCam" not in cl.monitor_types
+
+
+def test_guest_monitoring_none(env):
+    guests.add_guest("show", "Ann")
+    cl = _client()
+    plans.apply_plan(_plan({"guests": {"max": 3, "panel_scene": "Panel", "solo_scenes": True, "monitor": "none"}}),
+                     cl, sleep=lambda s: None, guest_ctx=_ctx())
+    assert cl.monitor_types == {"Guest 1: Ann": "OBS_MONITORING_TYPE_NONE"}
+
+
+def test_guest_monitoring_dry_run_lists_request(env):
+    guests.add_guest("show", "Ann")
+    r = plans.apply_plan(_plan({"guests": {"monitor": "monitor_only"}}), None, dry_run=True, sleep=lambda s: None,
+                         guest_ctx=_ctx())
+    sent = [q for q in r["requests"] if q["request"] == "SetInputAudioMonitorType"]
+    assert sent and sent[0]["monitorType"] == "OBS_MONITORING_TYPE_MONITOR_ONLY"
+
+
+def test_guest_monitor_invalid_value_fails_validation():
+    errs = " ".join(plans.validate(_plan({"guests": {"monitor": "loud"}})))
+    assert "guests.monitor" in errs
+    assert plans.validate(_plan({"guests": {"monitor": "monitor_only"}})) == []
