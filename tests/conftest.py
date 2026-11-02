@@ -101,6 +101,27 @@ class FakeClient:
         self.settings[name] = dict(settings or {})
         return NS(scene_item_id=self._add_item(scene, name))
 
+    def remove_input(self, name):
+        self._c("remove_input", name)
+        self.inputs = [i for i in self.inputs if i["inputName"] != name]
+        for sc, lst in self.scene_items.items():
+            self.scene_items[sc] = [i for i in lst if i["sourceName"] != name]
+
+    def set_input_name(self, name, new_name):
+        self._c("set_input_name", name, new_name)
+        for i in self.inputs:
+            if i["inputName"] == name:
+                i["inputName"] = new_name
+        for lst in self.scene_items.values():
+            for i in lst:
+                if i["sourceName"] == name:
+                    i["sourceName"] = new_name
+
+    def remove_scene_item(self, scene, item_id):
+        self._c("remove_scene_item", scene, item_id)
+        self.scene_items[scene] = [i for i in self.scene_items.get(scene, [])
+                                   if i["sceneItemId"] != item_id]
+
     def create_scene_item(self, scene, source, enabled=None):
         self._c("create_scene_item", scene, source)
         return NS(scene_item_id=self._add_item(scene, source))
@@ -126,6 +147,10 @@ class FakeClient:
         for it in self.scene_items[scene]:
             if it["sceneItemId"] == iid:
                 it["sceneItemIndex"] = idx
+
+    def set_scene_item_locked(self, scene, iid, locked):
+        self._c("set_scene_item_locked", scene, iid, locked)
+        self.transforms.setdefault((scene, iid), {})["locked"] = locked
 
     def get_input_properties_list_property_items(self, name, prop):
         self._c("get_input_properties_list_property_items", name, prop)

@@ -8,7 +8,7 @@ import json
 import os
 import sys
 
-from . import __version__, doctor, paths, plans, profiles, stream, ws
+from . import __version__, doctor, guests, paths, plans, profiles, stream, ws
 
 
 class CliError(Exception):
@@ -81,6 +81,26 @@ def build_parser() -> argparse.ArgumentParser:
             x.add_argument("--key-from", default="keychain", choices=["keychain", "env", "prompt"])
         if name == "export":
             x.add_argument("--md", action="store_true", default=True)
+
+    gu = sub.add_parser("guests", help="remote guests via VDO.Ninja (links, roster, guides)").add_subparsers(dest="sub", required=True)
+    ga = gu.add_parser("add", parents=[common], help="add a guest (creates the room on first use)")
+    ga.add_argument("plan")
+    ga.add_argument("--name", required=True)
+    gr = gu.add_parser("remove", parents=[common])
+    gr.add_argument("plan")
+    gr.add_argument("name")
+    gl = gu.add_parser("list", parents=[common])
+    gl.add_argument("plan")
+    gl.add_argument("--reveal", action="store_true", help="show the real password in links")
+    gk = gu.add_parser("links", parents=[common], help="guest, director and OBS links (password masked unless --reveal)")
+    gk.add_argument("plan")
+    gk.add_argument("name", nargs="?")
+    gk.add_argument("--reveal", action="store_true")
+    gt = gu.add_parser("rotate", parents=[common], help="new room and password; old links stop working")
+    gt.add_argument("plan")
+    gg = gu.add_parser("guide", parents=[common], help="write a personal guest guide HTML per guest")
+    gg.add_argument("plan")
+    gg.add_argument("--name")
 
     yt = sub.add_parser("youtube").add_subparsers(dest="sub", required=True)
     yt.add_parser("auth", parents=[common])
@@ -360,10 +380,14 @@ def cmd_plan(a):
                     report["service"] = {"skipped": str(e)}
             else:
                 report["service"] = {"skipped": f"target {plan['target']}: run `obsagent stream set-service --target {plan['target']} --server URL`"}
+            try:
+                gctx = guests.plan_context(plan["_name"], plan)
+            except guests.GuestError as e:
+                raise CliError(str(e))
             if cl is not None:
-                report["scenes_inputs"] = plans.apply_plan(plan, cl, dry_run=a.dry_run)
+                report["scenes_inputs"] = plans.apply_plan(plan, cl, dry_run=a.dry_run, guest_ctx=gctx)
             else:
-                report["scenes_inputs"] = {**plans.apply_plan(plan, None, dry_run=True),
+                report["scenes_inputs"] = {**plans.apply_plan(plan, None, dry_run=True, guest_ctx=gctx),
                                            "note": "planned only: scenes and inputs are created over the websocket once OBS is running"}
             report["checklist"] = plan.get("checklist") or []
 
@@ -386,6 +410,62 @@ def cmd_plan(a):
     except (plans.PlanError, profiles.PresetError) as e:
         raise CliError(str(e))
     return 1 if (locals().get("report") or {}).get("profile_result", {}).get("verified") is False else 0
+
+
+def _plan_guest_max(plan_name: str) -> int:
+    try:
+        return int((plans.load_plan(plan_name).get("guests") or {}).get("max", guests.MAX_GUESTS))
+    except plans.PlanError:
+        return guests.MAX_GUESTS
+
+
+def cmd_guests(a):
+    try:
+        if a.sub == "add":
+            state, g, created = guests.add_guest(a.plan, a.name, _plan_guest_max(a.plan))
+            lk = guests.links(state, guests.get_password(a.plan), False, g)
+            res = {"room_created": created, "guest": g, **lk,
+                   "next": f"obsagent guests links {a.plan} {g['name']} --reveal  |  obsagent guests guide {a.plan} --name {g['name']}"}
+            out(res, a, kv_text)
+        elif a.sub == "remove":
+            g = guests.remove_guest(a.plan, a.name)
+            out({"removed": g, "note": f"run `obsagent plan apply {a.plan}` to remove its OBS source"}, a, kv_text)
+        elif a.sub in ("list", "links"):
+            state = guests.load_state(a.plan)
+            if state is None:
+                raise CliError(f"no guests for plan {a.plan!r}; run `obsagent guests add {a.plan} --name NAME`")
+            only = guests.find_guest(state, a.name) if a.sub == "links" and a.name else None
+            lk = guests.links(state, guests.get_password(a.plan), a.reveal, only)
+
+            def txt(r):
+                print(f"room: {r['room']}")
+                if a.sub == "links":
+                    print(f"director: {r['director_link']}")
+                for g in r["guests"]:
+                    print(f"{g['slot']}  {g['name']}  id={g['id']}")
+                    if a.sub == "links":
+                        print(f"   guest: {g['guest_link']}")
+                        print(f"   obs:   {g['obs_link']}")
+                if not r["revealed"]:
+                    print("password masked; add --reveal to show the real links")
+            out(lk, a, txt)
+        elif a.sub == "rotate":
+            state = guests.rotate(a.plan)
+            out({"rotated": True, "room": state["room"],
+                 "warning": "old links no longer work: send every guest a new link and re-run the guide and `plan apply`",
+                 "guests": [g["name"] for g in state["guests"]]}, a, kv_text)
+        elif a.sub == "guide":
+            res = guests.write_guides(a.plan, plans.load_plan(a.plan), a.name)
+
+            def gtxt(rows):
+                for r in rows:
+                    print(f"{r['name']}: {r['path']}")
+                    if r["unfilled_placeholders"]:
+                        print("  still highlighted: " + ", ".join(r["unfilled_placeholders"]))
+            out({"guides": res}, a, lambda d: gtxt(d["guides"]))
+    except (guests.GuestError, plans.PlanError) as e:
+        raise CliError(str(e))
+    return 0
 
 
 def cmd_youtube(a):
@@ -417,7 +497,7 @@ def cmd_youtube(a):
 
 
 COMMANDS = {"doctor": cmd_doctor, "ws": cmd_ws, "preset": cmd_preset, "profile": cmd_profile,
-            "stream": cmd_stream, "plan": cmd_plan, "youtube": cmd_youtube}
+            "stream": cmd_stream, "plan": cmd_plan, "guests": cmd_guests, "youtube": cmd_youtube}
 
 
 def main(argv=None) -> int:

@@ -33,6 +33,18 @@ You run OBS Studio 33 on James's MacBook Pro (M1 Pro, 16 GB) for YouTube Live. Z
 - Add a key: `obsagent stream set-key --target youtube --key-name NAME --label "channel name"`. It prompts in a Terminal, or reads one line from stdin.
 - Before every test or live stream, say which key OBS is set to (last 4 characters) so the right channel goes live. The key selected in YouTube Studio must belong to the same account.
 
+## Remote guests (VDO.Ninja)
+
+Read `knowledge/guests.md` first. Free, no account. Up to 3 guests per show.
+- `obsagent guests add <plan> --name NAME` (first add creates the room), `list`, `remove`, `links [NAME] [--reveal]`, `rotate`, `guide [--name NAME]`. Then `plan apply <plan> --dry-run` and apply: it builds the `Guest N: NAME` browser sources, the panel scene and the solo scenes.
+- The plan needs a `guests:` block and the host `camera` and `mic` sources. Show details (`show_time`, `tech_check`, `host_contact`, `youtube.watch_url`) fill the guest guide.
+- The host must wear headphones. Open the director link in a browser tab and enable "Director will also be a performer" (or add `&showdirector`) so guests see and hear the host.
+- Each guest gets a personal link and a personal guide from `~/Documents/obsagent/guides/`. Links carry the room password: never paste them into a public place, a chat room, a repo, a plan file or a doc. Show them only with `--reveal`, only when the user asks, and send them privately.
+- `rotate` kills all old links. Warn that every guest needs a new one.
+- Triage: guest black tile, no audio, echo, guest can't hear the host are all in knowledge/guests.md.
+
+- Plans may set `background:` (`image` path or `color` #RRGGBB; relative paths resolve from the repo root). Apply makes one shared "Background" input at index 0 of every managed scene, canvas-sized and locked. Positioned items are locked too unless `lock_items: false`. See knowledge/guests.md.
+
 ## Safety rules
 
 - Start or stop a stream only when the user asks for it in this turn. Pass `--yes` only then. Recording tests are fine to run.

@@ -502,7 +502,7 @@ def test_talking_head_full_apply():
     plan = plans.load_plan("talking-head")
     cl = _th_client(inputs=[("Mic/Aux", "coreaudio_input_capture")])
     r = plans.apply_plan(plan, cl, sleep=lambda s: None)
-    made = [c[2] for c in cl.calls if c[0] == "create_input"]
+    made = [c[2] for c in cl.calls if c[0] == "create_input" and c[2] != "Background"]
     assert made == ["StreamCam", "Screen", "StreamCam Mic"] or sorted(made) == ["Screen", "StreamCam", "StreamCam Mic"]
     assert len(made) == 3
     assert cl.settings["StreamCam"]["device"] == "cam1"

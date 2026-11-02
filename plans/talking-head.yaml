@@ -22,6 +22,8 @@ sources:
   screen:
     name: Screen
     display: main
+# Shared backdrop at the bottom of every scene (image or color). Relative paths resolve against the repo root.
+background: {image: "assets/backgrounds/slate-soft.png"}
 replace_default_mic: true           # disable the default "Mic/Aux" so the MacBook mic does not double up
 checklist:
   - Screen & System Audio Recording, Camera and Microphone allowed for OBS
@@ -35,3 +37,15 @@ youtube:
   privacy: unlisted
   latency: low
   rtmps: true
+# Remote guests via VDO.Ninja. Add people with: obsagent guests add talking-head --name NAME
+# Links and the room password are never stored here (state in ~/.config/obsagent/shows, password in Keychain).
+guests:
+  max: 3
+  panel_scene: "Panel"
+  solo_scenes: true
+# Optional show details, used to fill the guest guide (quote the values):
+# show_time: "Thursday 6 Nov, 7:00 PM Pacific"
+# tech_check: "Wednesday 5 Nov, 5:00 PM Pacific"
+# host_contact: "text 555-0100"
+# youtube:
+#   watch_url: "https://youtube.com/live/XXXX"   # add this key inside the youtube block above

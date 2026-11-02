@@ -1,12 +1,13 @@
 """Show plans: YAML files describing a stream, validated and applied against OBS."""
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 
 import yaml
 
-from . import displays, paths, profiles, ws
+from . import displays, guests, paths, profiles, ws
 
 TARGETS = {"youtube", "zoom", "custom"}
 PRIVACY = {"public", "unlisted", "private"}
@@ -23,9 +24,25 @@ KINDS = {
     "screen": "screen_capture",
     "browser": "browser_source",
 }
-LAYOUTS = {"fill", "inset"}
+LAYOUTS = {"fill", "inset", "tile"}
 CORNERS = {"top-left", "top-right", "bottom-left", "bottom-right"}
 ENTRY_KEYS = {"source", "layout", "corner", "width_pct", "margin_px"}
+TILE_KEYS = {"x", "y", "w", "h"}  # only with layout: tile (explicit rectangle in canvas pixels)
+GUEST_KEYS = {"max", "panel_scene", "solo_scenes"}
+BG_KEYS = {"image", "color", "name", "scenes"}
+BG_NAME = "Background"
+BG_IMAGE_KIND = "image_source"
+BG_COLOR_KIND = "color_source_v3"
+BG_IMAGE_EXT = {".png", ".jpg", ".jpeg"}
+HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+MAX_GUESTS = 3
+GUEST_INPUT_RE = re.compile(r"^Guest (\d+): (.+)$")
+
+# Browser source settings, confirmed in obs-browser master (obs-browser-plugin.cpp,
+# obs-browser-source.cpp): input kind id "browser_source"; settings keys "url", "width", "height"
+# (ints, 1-8192) and "reroute_audio" (bool, UI label "Control audio via OBS", default false).
+GUEST_KIND = "browser_source"
 DEFAULT_MIC = "Mic/Aux"
 DEVICE_PROPS = {"camera": "device", "mic": "device_id"}  # mac-avcapture "device"; mac-audio.c "device_id"
 INPUT_NAMES = {"camera": "Camera", "mic": "Mic", "screen": "Screen", "browser": "Overlay"}
@@ -111,7 +128,12 @@ def validate(plan: dict) -> list[str]:
                 continue
             if src not in (plan.get("sources") or {}):
                 errs.append(f"scene '{s['name']}': source '{src}' is not declared under sources")
-            extra = set(e) - ENTRY_KEYS
+            extra = set(e) - ENTRY_KEYS - (TILE_KEYS if e.get("layout") == "tile" else set())
+            if e.get("layout") == "tile":
+                for k in sorted(TILE_KEYS):
+                    v = e.get(k)
+                    if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0 or (k in "wh" and v <= 0):
+                        errs.append(f"scene '{s['name']}' source '{src}': tile needs numeric {k} (x,y >= 0; w,h > 0)")
             if extra:
                 errs.append(f"scene '{s['name']}' source '{src}': unknown keys {sorted(extra)}")
             lay = e.get("layout")
@@ -146,6 +168,95 @@ def validate(plan: dict) -> list[str]:
             errs.append(f"youtube.latency must be one of {sorted(LATENCY)}")
     if plan.get("date") and not plan.get("time"):
         errs.append("time is required when date is set")
+    errs += validate_guests(plan)
+    errs += validate_background(plan)
+    if plan.get("lock_items") is not None and not isinstance(plan["lock_items"], bool):
+        errs.append("lock_items must be true or false")
+    return errs
+
+
+def resolve_bg_image(path: str) -> Path:
+    p = Path(path).expanduser()
+    return p if p.is_absolute() else REPO_ROOT / p
+
+
+def bg_name(plan: dict) -> str:
+    return (plan.get("background") or {}).get("name") or BG_NAME
+
+
+def validate_background(plan: dict) -> list[str]:
+    bg = plan.get("background")
+    if bg is None:
+        return []
+    if not isinstance(bg, dict):
+        return ["background must be a mapping (image or color, optional name, scenes)"]
+    errs = []
+    extra = set(bg) - BG_KEYS
+    if extra:
+        errs.append(f"background: unknown keys {sorted(extra)}")
+    has_i, has_c = bg.get("image") is not None, bg.get("color") is not None
+    if has_i == has_c:
+        errs.append("background needs exactly one of image or color")
+    if has_i:
+        img = bg["image"]
+        if not isinstance(img, str) or not img.strip():
+            errs.append("background.image must be a file path string")
+        elif Path(img).suffix.lower() not in BG_IMAGE_EXT:
+            errs.append("background.image must be a .png, .jpg or .jpeg file")
+        elif not resolve_bg_image(img).is_file():
+            errs.append(f"background.image not found: {resolve_bg_image(img)}")
+    if has_c and not (isinstance(bg["color"], str) and HEX_COLOR_RE.match(bg["color"])):
+        errs.append("background.color must be a #RRGGBB string")
+    if "name" in bg and (not isinstance(bg["name"], str) or not bg["name"].strip()):
+        errs.append("background.name must be a non-empty string")
+    if "scenes" in bg:
+        sc = bg["scenes"]
+        if not isinstance(sc, list) or not sc or not all(isinstance(x, str) and x.strip() for x in sc):
+            errs.append("background.scenes must be a non-empty list of scene names")
+    return errs
+
+
+def color_to_abgr(color: str) -> int:
+    """#RRGGBB to the OBS color int 0xFFBBGGRR."""
+    r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+    return 0xFF000000 | (b << 16) | (g << 8) | r
+
+
+def pick_color_kind(kinds: list[str] | None) -> str:
+    if kinds and BG_COLOR_KIND not in kinds:
+        for k in kinds:
+            if k.startswith("color_source"):
+                return k
+    return BG_COLOR_KIND
+
+
+def validate_guests(plan: dict) -> list[str]:
+    errs = []
+    for k in ("show_time", "tech_check", "host_contact"):
+        if plan.get(k) is not None and not isinstance(plan[k], str):
+            errs.append(f"{k} must be a quoted string")
+    wu = (plan.get("youtube") or {}).get("watch_url")
+    if wu is not None and not (isinstance(wu, str) and re.match(r"^https?://\S+$", wu)):
+        errs.append("youtube.watch_url must be an http(s) URL")
+    g = plan.get("guests")
+    if g is None:
+        return errs
+    if not isinstance(g, dict):
+        return errs + ["guests must be a mapping (max, panel_scene, solo_scenes)"]
+    extra = set(g) - GUEST_KEYS
+    if extra:
+        errs.append(f"guests: unknown keys {sorted(extra)}")
+    m = g.get("max", MAX_GUESTS)
+    if isinstance(m, bool) or not isinstance(m, int) or not 1 <= m <= MAX_GUESTS:
+        errs.append(f"guests.max must be an integer from 1 to {MAX_GUESTS}")
+    if "panel_scene" in g and (not isinstance(g["panel_scene"], str) or not g["panel_scene"].strip()):
+        errs.append("guests.panel_scene must be a non-empty string")
+    if "solo_scenes" in g and not isinstance(g["solo_scenes"], bool):
+        errs.append("guests.solo_scenes must be true or false")
+    srcs = plan.get("sources") or {}
+    for need in ("camera", "mic"):
+        if need not in srcs:
+            errs.append(f"guests need sources.{need} (the host camera and mic)")
     return errs
 
 
@@ -181,6 +292,10 @@ def compute_transform(entry: dict, canvas: tuple[int, int], src: tuple[int, int]
     cw, ch = canvas
     t = {"rotation": 0.0, "scaleX": 1.0, "scaleY": 1.0, "alignment": 5, "boundsType": "OBS_BOUNDS_SCALE_INNER",
          "boundsAlignment": 0, "cropLeft": 0, "cropRight": 0, "cropTop": 0, "cropBottom": 0}
+    if entry.get("layout") == "tile":
+        t.update(positionX=float(entry["x"]), positionY=float(entry["y"]),
+                 boundsWidth=float(entry["w"]), boundsHeight=float(entry["h"]))
+        return t
     if entry.get("layout") == "fill":
         t.update(positionX=0.0, positionY=0.0, boundsWidth=float(cw), boundsHeight=float(ch))
         return t
@@ -195,6 +310,28 @@ def compute_transform(entry: dict, canvas: tuple[int, int], src: tuple[int, int]
     y = margin if corner.startswith("top") else ch - margin - h
     t.update(positionX=round(x, 2), positionY=round(y, 2), boundsWidth=round(w, 2), boundsHeight=round(h, 2))
     return t
+
+
+def panel_tiles(n: int, canvas: tuple[int, int] = (1920, 1080)) -> list[dict]:
+    """Tile rectangles for n people (host first). Designed on 1920x1080, scaled to the canvas."""
+    if n < 2 or n > MAX_GUESTS + 1:
+        raise PlanError(f"panel layout supports 2 to {MAX_GUESTS + 1} people, got {n}")
+    rects = {
+        2: [(0, 270), (960, 270)],
+        3: [(0, 0), (960, 0), (480, 540)],
+        4: [(0, 0), (960, 0), (0, 540), (960, 540)],
+    }[n]
+    sx, sy = canvas[0] / 1920.0, canvas[1] / 1080.0
+    return [{"layout": "tile", "x": round(x * sx, 2), "y": round(y * sy, 2),
+             "w": round(960 * sx, 2), "h": round(540 * sy, 2)} for x, y in rects]
+
+
+def guest_input_name(g: dict) -> str:
+    return f"Guest {g['slot']}: {g['name']}"
+
+
+def guest_solo_scene(g: dict) -> str:
+    return f"Guest: {g['name']}"
 
 
 class _Runner:
@@ -233,7 +370,8 @@ def _source_size(cl, scene, item_id, wait: float, sleep, now) -> tuple[int, int,
         sleep(0.25)
 
 
-def apply_plan(plan: dict, cl, dry_run: bool = False, sleep=time.sleep, now=time.monotonic) -> dict:
+def apply_plan(plan: dict, cl, dry_run: bool = False, sleep=time.sleep, now=time.monotonic,
+               guest_ctx: dict | None = None) -> dict:
     """Ensure scenes, inputs, devices, layout and mic exist. cl may be None only for dry runs
     (then everything is planned). Safe to re-run: existing scenes/inputs are reused and updated."""
     run = _Runner(cl, dry_run)
@@ -333,6 +471,13 @@ def apply_plan(plan: dict, cl, dry_run: bool = False, sleep=time.sleep, now=time
         chosen[name] = ensure_device(src, name)
         return sm.get(name)
 
+    lock_items = plan.get("lock_items", True) is not False
+
+    def lock(scene, iid):
+        if lock_items:
+            run.do("SetSceneItemLocked", "set_scene_item_locked", scene, iid, True, sceneName=scene,
+                   sceneItemId=iid if iid is not None else "<new item id>", sceneItemLocked=True)
+
     layout_rows = []
     for sc in scenes:
         order = []
@@ -355,8 +500,22 @@ def apply_plan(plan: dict, cl, dry_run: bool = False, sleep=time.sleep, now=time
                        sceneName=sc["name"], sceneItemId=iid if iid is not None else "<new item id>",
                        sceneItemTransform=tr)
                 layout_rows.append((sc["name"], name, e["layout"], tr))
+                lock(sc["name"], iid)
             run.do("SetSceneItemIndex", "set_scene_item_index", sc["name"], iid, idx, sceneName=sc["name"],
                    sceneItemId=iid if iid is not None else "<new item id>", sceneItemIndex=idx)
+
+    guest_scenes: list[dict] = []
+    removed_guests: list[str] = []
+    gcfg = plan.get("guests")
+    if gcfg and guest_ctx is not None:
+        guest_scenes, removed_guests = _apply_guests(plan, gcfg, guest_ctx, run, cl, canvas, notes, existing_scenes,
+                                                     present_inputs, done_inputs, items, ensure_input, lock)
+    elif gcfg:
+        notes.append("guests: no show state yet; run `obsagent guests add <plan> --name NAME` first")
+
+    if plan.get("background"):
+        _apply_background(plan, run, cl, canvas, notes, kinds, existing_inputs, present_inputs, existing_scenes,
+                          items, [sc["name"] for sc in scenes] + [g["name"] for g in guest_scenes])
 
     if "mic" in srcs and not global_mic:
         mn = input_name(plan, "mic")
@@ -379,9 +538,169 @@ def apply_plan(plan: dict, cl, dry_run: bool = False, sleep=time.sleep, now=time
     if "screen" in srcs:
         notes.append("screen: display_uuid set from CoreGraphics (main display) unless the plan gives a UUID.")
     result = {"actions": run.requests, "requests": run.requests, "notes": notes}
+    if removed_guests:
+        result["removed_guest_inputs"] = removed_guests
     if run.live:
-        result["verify"] = verify_state(plan, cl, scenes, chosen, muted)
+        result["verify"] = verify_state(plan, cl, scenes + guest_scenes, chosen, muted)
     return result
+
+
+def _apply_background(plan, run, cl, canvas, notes, kinds, existing_inputs, present_inputs, existing_scenes, items,
+                      default_scenes):
+    """One shared Background input at the bottom of every target scene, sized to the canvas and locked.
+    Runs after all other ordering so index 0 is final."""
+    bg = plan["background"]
+    name = bg_name(plan)
+    if bg.get("image") is not None:
+        kind = BG_IMAGE_KIND
+        st = {"file": str(resolve_bg_image(bg["image"]))}
+    else:
+        kind = pick_color_kind(kinds)
+        st = {"color": color_to_abgr(bg["color"]), "width": canvas[0], "height": canvas[1]}
+    targets = list(dict.fromkeys(bg.get("scenes") or default_scenes))
+    for t in list(targets):
+        if t not in existing_scenes and not (cl is None or run.dry):
+            notes.append(f"background: scene '{t}' does not exist, skipped")
+            targets.remove(t)
+    have = name in present_inputs
+    if have and existing_inputs.get(name) not in (None, kind):
+        # OBS can keep a removed source alive while scenes still reference it, so a
+        # plain RemoveInput + CreateInput fails with code 601 (name in use). Rename the
+        # old source out of the way, pull it from every scene, then remove it.
+        old = f"{name} (replaced)"
+        run.do("SetInputName", "set_input_name", name, old, inputName=name, newInputName=old)
+        for sc, sm in items.items():
+            if sm.get(name) is not None:
+                run.do("RemoveSceneItem", "remove_scene_item", sc, sm[name], sceneName=sc,
+                       sceneItemId=sm[name])
+        run.do("RemoveInput", "remove_input", old, inputName=old)
+        present_inputs.discard(name)
+        for sm in items.values():
+            sm.pop(name, None)
+        have = False
+        notes.append(f"background: replaced existing '{name}' input ({existing_inputs.get(name)} -> {kind})")
+    created = have
+    if have:
+        run.do("SetInputSettings", "set_input_settings", name, st, True, inputName=name, inputSettings=st,
+               overlay=True)
+    tr = {"positionX": 0, "positionY": 0, "alignment": 5, "boundsType": "OBS_BOUNDS_STRETCH",
+          "boundsWidth": canvas[0], "boundsHeight": canvas[1]}
+    for scene in targets:
+        sm = items.setdefault(scene, {})
+        iid = sm.get(name)
+        if iid is None:
+            if not created:
+                resp = run.do("CreateInput", "create_input", scene, name, kind, st, True, sceneName=scene,
+                              inputName=name, inputKind=kind, inputSettings=st)
+                created = True
+            else:
+                resp = run.do("CreateSceneItem", "create_scene_item", scene, name, True, sceneName=scene,
+                              sourceName=name)
+            iid = ws._g(resp, "scene_item_id") if resp is not None else None
+            if iid is None and run.live:
+                iid = _item_map(cl, scene).get(name)
+            sm[name] = iid
+        ref = iid if iid is not None else "<new item id>"
+        run.do("SetSceneItemIndex", "set_scene_item_index", scene, iid, 0, sceneName=scene, sceneItemId=ref,
+               sceneItemIndex=0)
+        run.do("SetSceneItemTransform", "set_scene_item_transform", scene, iid, tr, sceneName=scene,
+               sceneItemId=ref, sceneItemTransform=tr)
+        run.do("SetSceneItemLocked", "set_scene_item_locked", scene, iid, True, sceneName=scene, sceneItemId=ref,
+               sceneItemLocked=True)
+    present_inputs.add(name)
+
+
+def _apply_guests(plan, gcfg, ctx, run, cl, canvas, notes, existing_scenes, present_inputs, done_inputs, items,
+                  ensure_input, lock=lambda scene, iid: None):
+    """Guest browser sources, the panel scene, optional solo scenes, and pruning of removed guests.
+    URLs sent to OBS carry the password; the recorded requests carry the masked form."""
+    state = {"room": ctx["room"]}
+    password = ctx["password"]
+    roster = sorted(ctx["guests"], key=lambda g: g["slot"])
+    wanted = {guest_input_name(g) for g in roster}
+    panel = gcfg.get("panel_scene") or "Panel"
+    solo = bool(gcfg.get("solo_scenes", True))
+    made: list[dict] = []
+
+    def ensure_scene(name):
+        if name not in existing_scenes:
+            run.do("CreateScene", "create_scene", name, scene=name)
+            existing_scenes.append(name)
+            items[name] = {}
+        elif name not in items:
+            items[name] = _item_map(cl, name) if cl is not None else {}
+        if not any(m["name"] == name for m in made):
+            made.append({"name": name})
+
+    def ensure_guest_input(g, scene):
+        name = guest_input_name(g)
+        sm = items.setdefault(scene, {})
+        real = guests.obs_link(state, g, password)
+        masked = guests.obs_link(state, g, guests.MASK)
+        st = {"url": real, "width": 1920, "height": 1080, "reroute_audio": True}
+        shown = {**st, "url": masked}
+        if name in present_inputs:
+            if name not in done_inputs:
+                run.do("SetInputSettings", "set_input_settings", name, st, True, inputName=name,
+                       inputSettings=shown, overlay=True)
+                done_inputs.add(name)
+            if name in sm:
+                return sm[name]
+            resp = run.do("CreateSceneItem", "create_scene_item", scene, name, True, sceneName=scene, sourceName=name)
+        else:
+            resp = run.do("CreateInput", "create_input", scene, name, GUEST_KIND, st, True, sceneName=scene,
+                          inputName=name, inputKind=GUEST_KIND, inputSettings=shown)
+            present_inputs.add(name)
+            done_inputs.add(name)
+        sm[name] = ws._g(resp, "scene_item_id") if resp is not None else None
+        if sm[name] is None and run.live:
+            sm.update(_item_map(cl, scene))
+        return sm.get(name)
+
+    def place(scene, rows):
+        for idx, (iid, entry) in enumerate(rows):
+            ref = iid if iid is not None else "<new item id>"
+            if entry:
+                tr = compute_transform(entry, canvas, (0, 0))
+                run.do("SetSceneItemTransform", "set_scene_item_transform", scene, iid, tr, sceneName=scene,
+                       sceneItemId=ref, sceneItemTransform=tr)
+                lock(scene, iid)
+            run.do("SetSceneItemIndex", "set_scene_item_index", scene, iid, idx, sceneName=scene,
+                   sceneItemId=ref, sceneItemIndex=idx)
+
+    removed = []
+    if cl is not None:
+        for nm in list(present_inputs):
+            if GUEST_INPUT_RE.match(nm) and nm not in wanted:
+                run.do("RemoveInput", "remove_input", nm, inputName=nm)
+                present_inputs.discard(nm)
+                done_inputs.discard(nm)
+                for sm in items.values():
+                    sm.pop(nm, None)
+                removed.append(nm)
+        if removed:
+            notes.append("removed guest inputs no longer in the roster: " + ", ".join(removed))
+            keep = {guest_solo_scene(g) for g in roster}
+            stale = [s for s in existing_scenes if s.startswith("Guest: ") and s not in keep]
+            if stale:
+                notes.append("stale guest scenes left in place (delete in OBS if unwanted): " + ", ".join(stale))
+
+    if roster:
+        ensure_scene(panel)
+        tiles = panel_tiles(1 + len(roster), canvas)
+        rows = [(ensure_input("camera", panel), tiles[0])]
+        for g, tile in zip(roster, tiles[1:]):
+            rows.append((ensure_guest_input(g, panel), tile))
+        rows.append((ensure_input("mic", panel), None))
+        place(panel, rows)
+        if solo:
+            for g in roster:
+                sc = guest_solo_scene(g)
+                ensure_scene(sc)
+                gid = ensure_guest_input(g, sc)
+                place(sc, [(gid, {"layout": "fill"}), (ensure_input("mic", sc), None)])
+        notes.append("guest sources use 'Control audio via OBS' (reroute_audio); URLs are masked in this report")
+    return made, removed
 
 
 def verify_state(plan: dict, cl, scenes: list[dict], chosen: dict, muted: list) -> dict:

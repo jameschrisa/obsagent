@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "arial",
+        "createdAt": "2026-11-02T00:34:48.471Z",
+        "reason": "Claude: docs/guest-guide.html is a DOCX-conversion source; the brief required a universal system font (Arial/Helvetica) so Word renders it identically"
+      }
+    ]
+  }
+}
