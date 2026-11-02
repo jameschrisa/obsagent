@@ -8,7 +8,7 @@ import json
 import os
 import sys
 
-from . import __version__, doctor, guests, paths, plans, profiles, stream, ws
+from . import __version__, doctor, guests, mailer, paths, plans, profiles, stream, ws
 
 
 class CliError(Exception):
@@ -86,6 +86,22 @@ def build_parser() -> argparse.ArgumentParser:
     ga = gu.add_parser("add", parents=[common], help="add a guest (creates the room on first use)")
     ga.add_argument("plan")
     ga.add_argument("--name", required=True)
+    ga.add_argument("--email", help="guest email address (stored in show state only)")
+    gse = gu.add_parser("set-email", parents=[common], help="set or change a guest's email address")
+    gse.add_argument("plan")
+    gse.add_argument("--name", required=True)
+    gse.add_argument("--email", required=True)
+    gss = gu.add_parser("set-sender", parents=[common], help="store the default sender address (a Mail.app account)")
+    gss.add_argument("addr")
+    gss.add_argument("--name", help="host display name used in From and as the email sign-off")
+    gu.add_parser("senders", parents=[common], help="list Mail.app accounts and addresses (read-only)")
+    gi = gu.add_parser("invite", parents=[common], help="email each guest their personal link via Mail.app (draft by default)")
+    gi.add_argument("plan")
+    gi.add_argument("--name")
+    gi.add_argument("--all", action="store_true")
+    gi.add_argument("--from", dest="sender", metavar="ADDR")
+    gi.add_argument("--send", action="store_true", help="send immediately instead of opening a draft for review")
+    gi.add_argument("--attach-guide", action="store_true")
     gr = gu.add_parser("remove", parents=[common])
     gr.add_argument("plan")
     gr.add_argument("name")
@@ -422,11 +438,39 @@ def _plan_guest_max(plan_name: str) -> int:
 def cmd_guests(a):
     try:
         if a.sub == "add":
-            state, g, created = guests.add_guest(a.plan, a.name, _plan_guest_max(a.plan))
+            state, g, created = guests.add_guest(a.plan, a.name, _plan_guest_max(a.plan), a.email)
             lk = guests.links(state, guests.get_password(a.plan), False, g)
             res = {"room_created": created, "guest": g, **lk,
                    "next": f"obsagent guests links {a.plan} {g['name']} --reveal  |  obsagent guests guide {a.plan} --name {g['name']}"}
             out(res, a, kv_text)
+        elif a.sub == "set-email":
+            g = guests.set_email(a.plan, a.name, a.email)
+            out({"guest": g["name"], "email": g["email"]}, a, kv_text)
+        elif a.sub == "set-sender":
+            cfg = mailer.set_sender(a.addr, a.name)
+            out({"sender": cfg["sender"], "host_name": cfg.get("host_name"),
+                 "config": str(mailer.config_path())}, a, kv_text)
+        elif a.sub == "senders":
+            rows = mailer.list_senders()
+
+            def stxt(d):
+                for r in d["senders"]:
+                    print(f"{r['address']}  ({r['account']})")
+                if not d["senders"]:
+                    print("no enabled Mail.app accounts found")
+            out({"senders": rows}, a, stxt)
+        elif a.sub == "invite":
+            if bool(a.name) == bool(a.all):
+                raise CliError("pass exactly one of --name NAME or --all")
+            res = mailer.invite(a.plan, plans.load_plan(a.plan), [a.name] if a.name else None,
+                                a.sender, a.send, a.attach_guide)
+
+            def itxt(rows):
+                for r in rows:
+                    print(f"{r['mode']}: to {r['to']} from {r['from']} subject {r['subject']!r} link {r['link']}")
+                if not a.send:
+                    print("drafts are open in Mail.app for review; nothing was sent")
+            out({"invites": res}, a, lambda d: itxt(d["invites"]))
         elif a.sub == "remove":
             g = guests.remove_guest(a.plan, a.name)
             out({"removed": g, "note": f"run `obsagent plan apply {a.plan}` to remove its OBS source"}, a, kv_text)
@@ -436,13 +480,22 @@ def cmd_guests(a):
                 raise CliError(f"no guests for plan {a.plan!r}; run `obsagent guests add {a.plan} --name NAME`")
             only = guests.find_guest(state, a.name) if a.sub == "links" and a.name else None
             lk = guests.links(state, guests.get_password(a.plan), a.reveal, only)
+            by_id = {g["id"]: g for g in state["guests"]}
+            for row in lk["guests"]:
+                sg = by_id[row["id"]]
+                row["email"] = sg.get("email")
+                row["invited"] = ({"at": sg["last_invited_at"], "from": sg.get("invited_from"), "mode": sg.get("invite_mode")}
+                                  if sg.get("last_invited_at") else None)
 
             def txt(r):
                 print(f"room: {r['room']}")
                 if a.sub == "links":
                     print(f"director: {r['director_link']}")
                 for g in r["guests"]:
-                    print(f"{g['slot']}  {g['name']}  id={g['id']}")
+                    inv = g.get("invited")
+                    mail = f"  email={g['email']}" if g.get("email") else ""
+                    istat = f"  invited {inv['mode']} {inv['at']} from {inv['from']}" if inv else "  not invited"
+                    print(f"{g['slot']}  {g['name']}  id={g['id']}{mail}{istat}")
                     if a.sub == "links":
                         print(f"   guest: {g['guest_link']}")
                         print(f"   obs:   {g['obs_link']}")
@@ -464,7 +517,7 @@ def cmd_guests(a):
                         print("  still highlighted: " + ", ".join(r["unfilled_placeholders"]))
             out({"guides": res}, a, lambda d: gtxt(d["guides"]))
     except (guests.GuestError, plans.PlanError) as e:
-        raise CliError(str(e))
+        raise CliError(str(e), getattr(e, "code", 1))
     return 0
 
 

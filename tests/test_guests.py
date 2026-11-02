@@ -282,3 +282,131 @@ def test_guide_cli_reports_unfilled(env, monkeypatch, capsys):
     assert rc == 0 and env["vdo:show"] not in o
     assert "[TECH CHECK DATE AND TIME]" in d["guides"][0]["unfilled_placeholders"]
     assert cli.main(["guests", "guide", "show", "--name", "Nobody"]) == 1
+
+
+# ---- Mail.app invites (subprocess mocked, osascript never runs) ----
+
+from types import SimpleNamespace as _NS
+from obsagent_lib import mailer
+
+PLAN = {"title": "Big Show", "show_time": "Sat 7 Nov, 10am PT", "tech_check": "Fri 6 Nov, 4pm PT",
+        "host_contact": "text 555-0100", "youtube": {}}
+ACCTS = "Signet\tjames@signetscience.com\niCloud\tjchrisa@icloud.com\n"
+
+
+@pytest.fixture
+def mail(env, monkeypatch):
+    calls = []
+    reply = {"out": ACCTS, "rc": 0, "err": ""}
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        is_query = len(cmd) == 3
+        return _NS(returncode=reply["rc"], stdout=reply["out"] if is_query else "", stderr=reply["err"])
+    monkeypatch.setattr(mailer.subprocess, "run", fake_run)
+    monkeypatch.setattr(plans, "load_plan", lambda n: dict(PLAN, _name=n))
+    return _NS(calls=calls, reply=reply)
+
+
+def _setup(capsys, email="ann@example.com"):
+    cli.main(["guests", "add", "show", "--name", "Ann"] + (["--email", email] if email else []))
+    cli.main(["guests", "set-sender", "james@signetscience.com", "--name", "James"])
+    capsys.readouterr()
+
+
+def test_draft_default_args_not_interpolated(mail, env, capsys):
+    _setup(capsys)
+    rc, o = run(["guests", "invite", "show", "--name", "Ann"], capsys)
+    assert rc == 0
+    cmd = mail.calls[-1]
+    assert cmd[:2] == ["osascript", "-e"] and cmd[2] == mailer.DRAFT_SCRIPT
+    assert "visible:true" in cmd[2] and "send msg" not in cmd[2]
+    subject, body, sender, to, attach = cmd[3:]
+    assert subject == "Your guest link for Big Show"
+    assert sender == "James <james@signetscience.com>" and to == "ann@example.com" and attach == ""
+    assert "\n" in body and "vdo.ninja" in body and env["vdo:show"] in body
+    for v in (subject, body, to):
+        assert v not in cmd[2]
+    assert "draft: to ann@example.com" in o and env["vdo:show"] not in o and "password=********" in o
+
+
+def test_send_uses_send_script(mail, env, capsys):
+    _setup(capsys)
+    rc, o = run(["guests", "invite", "show", "--all", "--send", "--json"], capsys)
+    assert rc == 0
+    assert mail.calls[-1][2] == mailer.SEND_SCRIPT
+    assert "visible:false" in mailer.SEND_SCRIPT and "send msg" in mailer.SEND_SCRIPT
+    assert json.loads(o)["invites"][0]["mode"] == "sent"
+    assert env["vdo:show"] not in o
+
+
+def test_unknown_sender_exits_2_with_list(mail, env, capsys):
+    _setup(capsys)
+    n = len(mail.calls)
+    rc, _ = run(["guests", "invite", "show", "--name", "Ann", "--from", "james@ausvrn.com"], capsys)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert len(mail.calls) == n + 1  # only the account query ran
+    rc = cli.main(["guests", "invite", "show", "--name", "Ann", "--from", "james@ausvrn.com"])
+    err = capsys.readouterr().err
+    assert rc == 2 and "jchrisa@icloud.com" in err and "Internet Accounts" in err
+
+
+def test_automation_denied(mail, env, capsys):
+    _setup(capsys)
+    mail.reply.update(rc=1, err="execution error: Not authorized to send Apple events to Mail. (-1743)")
+    rc = cli.main(["guests", "invite", "show", "--name", "Ann"])
+    err = capsys.readouterr().err
+    assert rc == 1 and "Privacy & Security > Automation" in err
+
+
+def test_missing_email_and_sender(mail, env, capsys):
+    _setup(capsys, email=None)
+    rc = cli.main(["guests", "invite", "show", "--name", "Ann"])
+    assert rc == 1 and "no email address for: Ann" in capsys.readouterr().err
+    assert not mail.calls
+    cli.main(["guests", "set-email", "show", "--name", "Ann", "--email", "ann@example.com"])
+    (paths.agent_config_dir() / "config").unlink()
+    rc = cli.main(["guests", "invite", "show", "--name", "Ann"])
+    assert rc == 1 and "set-sender" in capsys.readouterr().err
+
+
+def test_bad_email_rejected(env, capsys):
+    assert cli.main(["guests", "add", "show", "--name", "Ann", "--email", "nope"]) == 1
+    assert "valid email" in capsys.readouterr().err
+
+
+def test_state_recorded_and_listed(mail, env, capsys):
+    _setup(capsys)
+    cli.main(["guests", "invite", "show", "--name", "Ann", "--from", "jchrisa@icloud.com"])
+    capsys.readouterr()
+    g = guests.load_state("show")["guests"][0]
+    assert g["invited_from"] == "jchrisa@icloud.com" and g["invite_mode"] == "draft" and g["last_invited_at"]
+    _, o = run(["guests", "list", "show"], capsys)
+    assert "invited draft" in o and "ann@example.com" in o
+    assert stat.S_IMODE(os.stat(paths.agent_config_dir() / "config").st_mode) == 0o600
+
+
+def test_attach_guide(mail, env, capsys, monkeypatch):
+    _setup(capsys)
+    cli.main(["guests", "invite", "show", "--name", "Ann", "--attach-guide"])
+    attach = mail.calls[-1][-1]
+    assert attach.endswith("show-ann.html") and Path(attach).exists()
+
+
+def test_body_omits_missing_fields():
+    s, b = guests.render_email("show", {"title": "T"}, "Ann", "https://x/", None)
+    assert s == "Your guest link for T"
+    assert "Tech check" not in b and "reach me" not in b and " on ." not in b and "[" not in b
+    assert "Thanks for joining me on T." in b and b.rstrip().endswith("See you soon")
+
+
+def test_template_has_no_dashes():
+    s, b = guests.render_email("show", PLAN, "Ann", "https://x/", "James")
+    assert not re.search("[\u2013\u2014\u2015]", s + b)
+    assert not re.search("[\u2013\u2014\u2015]", Path(guests.__file__).read_text() + Path(mailer.__file__).read_text())
+
+
+def test_senders_lists(mail, capsys):
+    rc, o = run(["guests", "senders"], capsys)
+    assert rc == 0 and "jchrisa@icloud.com  (iCloud)" in o

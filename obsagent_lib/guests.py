@@ -146,9 +146,29 @@ def _find(state: dict, name: str) -> dict | None:
     return next((g for g in state["guests"] if g["name"].lower() == name.strip().lower()), None)
 
 
-def add_guest(plan: str, name: str, max_guests: int = MAX_GUESTS) -> tuple[dict, dict, bool]:
+def check_email(addr: str) -> str:
+    a = (addr or "").strip()
+    if not re.match(r"^[^\s@<>\"',;]+@[^\s@<>\"',;]+\.[A-Za-z]{2,}$", a):
+        raise GuestError(f"{addr!r} is not a valid email address")
+    return a
+
+
+def set_email(plan: str, name: str, email: str) -> dict:
+    email = check_email(email)
+    state = load_state(plan)
+    if state is None:
+        raise GuestError(f"no guests for plan {plan!r}")
+    g = find_guest(state, name)
+    g["email"] = email
+    save_state(plan, state)
+    return g
+
+
+def add_guest(plan: str, name: str, max_guests: int = MAX_GUESTS, email: str | None = None) -> tuple[dict, dict, bool]:
     """Returns (state, guest, room_created)."""
     name = _clean_name(name)
+    if email:
+        email = check_email(email)
     limit = min(int(max_guests), MAX_GUESTS)
     state, created = ensure_state(plan)
     if _find(state, name):
@@ -162,6 +182,8 @@ def add_guest(plan: str, name: str, max_guests: int = MAX_GUESTS) -> tuple[dict,
     while gid in ids:
         gid = new_guest_id()
     guest = {"slot": slot, "name": name, "id": gid}
+    if email:
+        guest["email"] = email
     state["guests"].append(guest)
     state["guests"].sort(key=lambda g: g["slot"])
     save_state(plan, state)
@@ -302,3 +324,35 @@ def write_guides(plan_name: str, plan: dict, only: str | None = None) -> list[di
         os.chmod(f, 0o600)
         out.append({"name": g["name"], "path": str(f), "unfilled_placeholders": remaining})
     return out
+
+
+# ---- invite email ----
+
+EMAIL_SUBJECT = "Your guest link for {title}"
+
+
+def render_email(plan_name: str, plan: dict, guest_name: str, link: str, host_name: str | None = None) -> tuple[str, str]:
+    """Plain-text invite. Lines for missing plan fields are left out, never shown as placeholders."""
+    yt = plan.get("youtube") or {}
+    title = (yt.get("title") or plan.get("title") or plan_name)
+    show_time = plan.get("show_time")
+    tech = plan.get("tech_check")
+    contact = plan.get("host_contact")
+    lines = [f"Hi {guest_name},", ""]
+    lines.append(f"Thanks for joining me on {title}" + (f" on {show_time}" if show_time else "") + ".")
+    lines += ["", "Here is your personal guest link:", link, ""]
+    if tech:
+        lines += [f"Tech check: {tech}. Please join from the same room and setup you will use on the day.", ""]
+    lines += [
+        "How to join:",
+        "1. Open the link in Chrome or Edge on a laptop or desktop. A phone works too: use Safari or Chrome and hold it sideways.",
+        "2. Allow your camera and microphone when asked.",
+        "3. Wear headphones, pick your camera and mic, and press the start button.",
+        "4. Keep the tab open. I will bring you on air from my side.",
+        "",
+        "Please keep this link to yourself, it works like a key to the studio.",
+    ]
+    if contact:
+        lines += ["", f"If anything goes wrong, reach me at {contact}."]
+    lines += ["", host_name or "See you soon"]
+    return EMAIL_SUBJECT.format(title=title), "\n".join(lines) + "\n"

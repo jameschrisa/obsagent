@@ -57,6 +57,10 @@ From obs-browser (`obs-browser-plugin.cpp` and `obs-browser-source.cpp`, master)
 4. Do not also listen to the guest tabs in a browser. The sound comes through OBS.
 5. In OBS, set the guest sources to Monitor Off in Advanced Audio Properties unless you want to hear them in your headphones. Monitor and Output sends them to your headphones and the stream.
 
+## Emailing invites
+
+`obsagent guests invite` creates each guest's email in Mail.app, so it goes from your own address and Mail.app keeps the credentials. Set up once with `guests senders` and `guests set-sender ADDR --name NAME`; give each guest an address with `guests add --email` or `guests set-email`. The default opens a draft window to review; `--send` sends at once. `--attach-guide` attaches the personal guide. The From address must be an enabled Mail account: to send from james@ausvrn.com, add the ausvrn.com (Fastmail) account in Mail first. If macOS reports error -1743, allow your terminal to control Mail under System Settings > Privacy & Security > Automation. Emails are stored nowhere in the repo, only in `~/.config/obsagent/shows/`.
+
 ## Host checklist
 
 - [ ] Headphones on, plugged in before OBS opens.

@@ -41,6 +41,9 @@ Read `knowledge/guests.md` first. Free, no account. Up to 3 guests per show.
 - The host must wear headphones. Open the director link in a browser tab and enable "Director will also be a performer" (or add `&showdirector`) so guests see and hear the host.
 - Each guest gets a personal link and a personal guide from `~/Documents/obsagent/guides/`. Links carry the room password: never paste them into a public place, a chat room, a repo, a plan file or a doc. Show them only with `--reveal`, only when the user asks, and send them privately.
 - `rotate` kills all old links. Warn that every guest needs a new one.
+- Invites go through Mail.app (AppleScript), from the host's own address. Setup once: `obsagent guests senders` (lists Mail accounts), `obsagent guests set-sender ADDR --name "James"`. Per guest: `guests add <plan> --name N --email ADDR` or `guests set-email`. Then `obsagent guests invite <plan> (--name N | --all) [--from ADDR] [--attach-guide]`.
+- Default is a visible DRAFT in Mail.app for the user to review. Never use `--send` until you have shown the user who it goes to, the from address and the subject in your message and they have said yes in that message. Never print the room password.
+- Exit 2 means the from address is not an enabled Mail account; to send from james@ausvrn.com, add the ausvrn.com (Fastmail) account in Mail first. A -1743 error means the terminal needs Automation permission for Mail (System Settings > Privacy & Security > Automation).
 - Triage: guest black tile, no audio, echo, guest can't hear the host are all in knowledge/guests.md.
 
 - Plans may set `background:` (`image` path or `color` #RRGGBB; relative paths resolve from the repo root). Apply makes one shared "Background" input at index 0 of every managed scene, canvas-sized and locked. Positioned items are locked too unless `lock_items: false`. See knowledge/guests.md.

@@ -23,7 +23,8 @@ sources:
     name: Screen
     display: main
 # Shared backdrop at the bottom of every scene (image or color). Relative paths resolve against the repo root.
-background: {image: "assets/backgrounds/slate-soft.png"}
+# Default wallpaper (Pexels photo, kept outside the repo). Fallback in repo: assets/backgrounds/slate-soft.png
+background: {image: "~/Documents/obsagent/backgrounds/blue-peach-diagonal.jpg"}
 replace_default_mic: true           # disable the default "Mic/Aux" so the MacBook mic does not double up
 checklist:
   - Screen & System Audio Recording, Camera and Microphone allowed for OBS
