@@ -128,7 +128,7 @@ def test_guide_fills_placeholders(env, tmp_path, capsys):
     assert "Talking head show" in text
     assert f'<a href="https://vdo.ninja/?room=' in text and "[YOUR GUEST LINK]" not in text
     assert set(out[0]["unfilled_placeholders"]) == {"[TECH CHECK DATE AND TIME]", "[YOUTUBE WATCH LINK]"}
-    assert 'class="fill">[TECH CHECK DATE AND TIME]' in text
+    assert '<mark>[TECH CHECK DATE AND TIME]</mark>' in text
     # template untouched
     assert "[YOUR GUEST LINK]" in (REPO / "docs" / "guest-guide.html").read_text()
 

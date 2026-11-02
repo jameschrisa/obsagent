@@ -289,9 +289,11 @@ def render_guide(template: str, plan: dict, guest_name: str, link: str) -> tuple
         else:
             rep = html.escape(sval)
         text = text.replace(f'<span class="fill">{ph}</span>', rep)
+        text = text.replace(f'<mark>{ph}</mark>', rep)
         text = text.replace(ph, html.escape(sval) if ph != "[YOUTUBE WATCH LINK]" else rep)
     anchor = f'<a href="{html.escape(link, quote=True)}">{html.escape(link)}</a>'
     text = text.replace('<span class="fill">[YOUR GUEST LINK]</span>', anchor)
+    text = text.replace('<mark>[YOUR GUEST LINK]</mark>', anchor)
     greeting = f"<p>Hi {html.escape(guest_name)},</p>\n"
     text = re.sub(r"(</h1>\n?)", lambda m: m.group(1) + greeting, text, count=1)
     remaining = [p for p in PLACEHOLDERS if p in text]

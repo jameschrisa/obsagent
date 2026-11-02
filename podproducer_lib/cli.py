@@ -42,7 +42,22 @@ def _line(ok, label, detail="") -> bool:
 
 def obs_monitoring_device():
     base = Path.home() / "Library" / "Application Support" / "obs-studio"
-    for f in (base / "global.ini", *sorted(base.glob("basic/profiles/*/basic.ini"))):
+    # Read the ACTIVE profile only (user.ini/global.ini [Basic] ProfileDir); other profiles keep their own value.
+    files = []
+    for ini in (base / "user.ini", base / "global.ini"):
+        try:
+            cp = configparser.ConfigParser(strict=False, interpolation=None)
+            cp.optionxform = str
+            cp.read(ini)
+            d = cp.get("Basic", "ProfileDir", fallback="")
+            if d:
+                files.append(base / "basic" / "profiles" / d / "basic.ini")
+                break
+        except Exception:
+            continue
+    if not files:
+        files = [base / "global.ini", *sorted(base.glob("basic/profiles/*/basic.ini"))]
+    for f in files:
         try:
             cp = configparser.ConfigParser(strict=False, interpolation=None)
             cp.read(f)
