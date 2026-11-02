@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["obsws-python", "pyyaml"]
+# dependencies = ["obsws-python", "pyyaml", "pillow"]
 # ///
 """obsagent: set up, configure, test and troubleshoot OBS Studio on macOS (YouTube Live first).
 

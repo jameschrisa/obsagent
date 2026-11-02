@@ -39,6 +39,16 @@ def agent_config_dir() -> Path:
     return Path(os.environ.get("OBSAGENT_CONFIG_DIR", str(Path.home() / ".config" / "obsagent")))
 
 
+def state_dir() -> Path:
+    """Per-user state (session logs). env OBSAGENT_STATE_DIR overrides, used by tests."""
+    return Path(os.environ.get("OBSAGENT_STATE_DIR", str(Path.home() / ".local" / "state" / "obsagent")))
+
+
+def snapshots_dir() -> Path:
+    override = os.environ.get("OBSAGENT_SNAPSHOT_DIR")
+    return Path(override) if override else Path.home() / "Documents" / "obsagent" / "snapshots"
+
+
 def mask(value: str | None, keep: int = 4) -> str:
     """Mask a secret, keeping only the last `keep` chars."""
     if not value:

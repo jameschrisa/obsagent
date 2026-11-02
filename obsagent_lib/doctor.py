@@ -10,7 +10,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import paths, profiles, ws
+from . import guests, mailer, paths, plans, profiles, ws
 
 
 def chk(id_, status, summary, detail=None, fix=None) -> dict:
@@ -216,7 +216,103 @@ def check_network() -> dict:
                fix=None if status == "ok" else "Use a lower preset (youtube-720p30) or a wired connection.")
 
 
-def run_doctor(net: bool = False) -> dict:
+def read_browser_hwaccel() -> str | None:
+    """BrowserHWAccel from [General] in global.ini (or user.ini), lowercased, None if unset."""
+    for fname in ("global.ini", "user.ini"):
+        f = paths.obs_config_dir() / fname
+        if f.exists():
+            cp = profiles.read_ini(f)
+            if cp.has_section("General") and cp["General"].get("BrowserHWAccel") is not None:
+                return cp["General"]["BrowserHWAccel"].strip().lower()
+    return None
+
+
+def check_browser_hwaccel() -> dict:
+    v = read_browser_hwaccel()
+    if v == "true":
+        return chk("browser_hwaccel", "warn", "Browser Source Hardware Acceleration is on (BrowserHWAccel=true)",
+                   fix="Browser sources such as VDO.Ninja guests can render fully transparent. OBS > Settings > Advanced > "
+                       "turn off Browser Source Hardware Acceleration, then restart OBS.")
+    if v == "false":
+        return chk("browser_hwaccel", "ok", "Browser Source Hardware Acceleration is off")
+    return chk("browser_hwaccel", "info", "BrowserHWAccel not set in global.ini (OBS default is on)",
+               fix="If browser sources render blank, turn it off in OBS > Settings > Advanced and restart OBS.")
+
+
+def plan_checks(plan_name: str) -> list[dict]:
+    """Show-readiness checks for a plan: validity, background, guests, Keychain and Mail.app."""
+    try:
+        plan = plans.load_plan(plan_name)
+    except plans.PlanError as e:
+        return [chk("plan_valid", "fail", f"Plan {plan_name!r} cannot be loaded", detail=str(e)[:300],
+                    fix="Check the plan name or path (`obsagent plan new NAME`).")]
+    errs = plans.validate(plan)
+    rows = [chk("plan_valid", "fail" if errs else "ok",
+                f"Plan {plan_name!r} has {len(errs)} validation error(s)" if errs else f"Plan {plan_name!r} validates",
+                detail=errs or None, fix="Run `obsagent plan validate %s` and fix each error." % plan_name if errs else None)]
+    bg = plan.get("background")
+    if isinstance(bg, dict) and bg.get("image") is not None and isinstance(bg["image"], str):
+        img = plans.resolve_bg_image(bg["image"])
+        rows.append(chk("plan_background", "ok" if img.is_file() else "fail",
+                        f"Background image {img}" + (" exists" if img.is_file() else " is missing"),
+                        fix=None if img.is_file() else "Fix background.image in the plan."))
+    elif isinstance(bg, dict):
+        rows.append(chk("plan_background", "ok", f"Background is a solid color {bg.get('color')}"))
+    else:
+        rows.append(chk("plan_background", "info", "Plan has no background block"))
+    if not plan.get("guests"):
+        rows.append(chk("plan_guests", "info", "Plan has no guests block, guest checks skipped"))
+        return rows
+    try:
+        state = guests.load_state(plan["_name"])
+    except guests.GuestError as e:
+        state = None
+        rows.append(chk("plan_guests", "fail", "Guest state unreadable", detail=str(e)[:200]))
+    roster = (state or {}).get("guests") or []
+    if not roster:
+        rows.append(chk("plan_guests", "warn", "Guest roster is empty",
+                        fix=f"Run `obsagent guests add {plan['_name']} --name NAME --email ADDR`."))
+    else:
+        rows.append(chk("plan_guests", "ok", f"{len(roster)} guest(s): {', '.join(g['name'] for g in roster)}"))
+        no_mail = [g["name"] for g in roster if not g.get("email")]
+        if no_mail:
+            rows.append(chk("guest_emails", "warn", "No email address for: " + ", ".join(no_mail),
+                            fix=f"Run `obsagent guests set-email {plan['_name']} --name NAME --email ADDR`."))
+        else:
+            rows.append(chk("guest_emails", "ok", "Every guest has an email address"))
+        if any(g["name"].strip().lower() == "test guest" for g in roster):
+            rows.append(chk("test_guest", "warn", "\"Test Guest\" is still on the roster",
+                            fix=f"Run `obsagent guests remove {plan['_name']} \"Test Guest\"` then `obsagent plan apply {plan['_name']}`."))
+    if state is not None:
+        acct = guests.keychain_account(plan["_name"])
+        if paths.keychain_get(acct):
+            rows.append(chk("room_password", "ok", f"Room password present in Keychain ({acct})"))
+        else:
+            rows.append(chk("room_password", "fail", f"No room password in Keychain ({acct})",
+                            fix=f"Run `obsagent guests rotate {plan['_name']}` to create a new room and password."))
+    rows.append(_mail_sender_check())
+    return rows
+
+
+def _mail_sender_check() -> dict:
+    sender = mailer.load_config().get("sender")
+    if not sender:
+        return chk("mail_sender", "warn", "No mail sender configured",
+                   fix="Run `obsagent guests senders`, then `obsagent guests set-sender ADDR --name NAME`.")
+    if not paths.which("osascript"):
+        return chk("mail_sender", "info", f"Sender {sender} configured; osascript unavailable, Mail.app check skipped")
+    try:
+        addrs = {r["address"].lower() for r in mailer.list_senders()}
+    except (mailer.MailError, OSError) as e:
+        return chk("mail_sender", "warn", f"Sender {sender} configured but Mail.app could not be queried",
+                   detail=str(e)[:300], fix="Allow your terminal to control Mail: System Settings > Privacy & Security > Automation.")
+    if sender.lower() in addrs:
+        return chk("mail_sender", "ok", f"Sender {sender} is a Mail.app account")
+    return chk("mail_sender", "warn", f"Sender {sender} is not an enabled Mail.app account",
+               fix="Add the account in System Settings > Internet Accounts, or run `obsagent guests set-sender` with a listed address.")
+
+
+def run_doctor(net: bool = False, plan: str | None = None) -> dict:
     running = paths.obs_running()
     checks = [
         check_obs_installed(),
@@ -231,7 +327,10 @@ def run_doctor(net: bool = False) -> dict:
         *check_permissions(),
         check_disk(),
         check_keychain(),
+        check_browser_hwaccel(),
     ]
+    if plan:
+        checks.extend(plan_checks(plan))
     if net:
         checks.append(check_network())
     summary = {s: sum(1 for c in checks if c["status"] == s) for s in ("ok", "warn", "fail", "info")}

@@ -134,3 +134,43 @@ Sources:
 ## OBS crash on quit in obs_transition_clear
 
 - A crash report whose faulting thread is `obs_graphics_thread` > `obs_source_destroy` > `obs_transition_clear` happened while OBS was shutting down. It is an OBS bug in cleanup, not a streaming problem. If it happens mid-session, attach the crash report from `~/Library/Logs/DiagnosticReports/OBS-*.ips` to an OBS GitHub issue.
+
+## Guest tile is blank but the guest's audio meters move
+
+- Symptom: a `Guest N: NAME` browser source shows nothing (fully transparent), yet its audio meter moves. `obsagent ws snapshot "Guest 1: NAME"` reports about 0% visible pixels.
+- Cause: Browser Source Hardware Acceleration is on (`BrowserHWAccel=true` under [General] in global.ini). On OBS 33.0.1 on an M1 Pro the page renders transparent until it is off.
+- Fix: OBS > Settings > Advanced > turn off Browser Source Hardware Acceleration, then restart OBS. Then `obsagent guests refresh SHOW`.
+- Evidence: `obsagent doctor` warns `browser_hwaccel`; `obsagent ws snapshot SOURCE` prints the visible-pixel ratio; `ws monitor --guests PLAN` flags a connected guest that goes blank for 2 samples. Found 2026-11-01.
+
+## Tiles moved or resized
+
+- Symptom: guest or camera tiles sit in the wrong place or have the wrong size.
+- Cause: someone dragged them in the preview.
+- Fix: `obsagent plan apply PLAN` restores positions and locks the items so they cannot be dragged again.
+- Evidence: `obsagent plan apply PLAN --dry-run` lists the transform requests; `preflight PLAN` reports missing scenes or Background.
+
+## CreateInput fails with error 601 (name already exists)
+
+- Symptom: `plan apply` fails creating an input; obs-websocket code 601, the name already exists.
+- Cause: OBS keeps a removed source alive while a scene still references it, so the name stays taken.
+- Fix: rename the old source, remove it from every scene, then remove it (plan apply does this for the Background input). If you removed a source by hand, run `plan apply` again.
+- Evidence: the 601 error text from the request; `obsagent ws inputs` still lists the name.
+
+## Mail.app errors -1743 and -1700 during guests invite
+
+- Symptom: `guests invite` fails with `-1743` or `-1700`.
+- Cause: -1743 means macOS blocked this terminal from controlling Mail (Automation permission). -1700 is a coercion error from AppleScript, usually a sender or recipient value Mail cannot use.
+- Fix: for -1743, System Settings > Privacy & Security > Automation, enable Mail for your terminal. For -1700, check the sender with `obsagent guests senders` and the guest email with `guests list`.
+- Evidence: the osascript error text; `obsagent doctor --plan PLAN` shows `mail_sender`.
+
+## Guest picture is narrow
+
+- Symptom: the guest appears as a thin vertical strip.
+- Cause: the guest joined from a phone held in portrait.
+- Fix: ask the guest to hold the phone sideways (landscape) and rejoin; then `obsagent guests refresh SHOW`.
+- Evidence: `obsagent ws snapshot "Guest 1: NAME"` shows the narrow frame.
+
+## Collect evidence in one step
+
+`obsagent triage collect` gathers the latest log matches (secrets masked), stats, stream and record status, profile, scene, output settings, BrowserHWAccel and crash reports from the last 24 hours.
+

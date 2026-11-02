@@ -7,6 +7,19 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
+def make_png(w, h, alpha_fn=lambda x, y: 255):
+    """Tiny RGBA PNG, filter type 0 (None). alpha_fn(x, y) gives the alpha of each pixel."""
+    import struct
+    import zlib
+
+    def chunk(t, body):
+        return struct.pack(">I", len(body)) + t + body + struct.pack(">I", zlib.crc32(t + body) & 0xFFFFFFFF)
+
+    raw = b"".join(b"\x00" + b"".join(bytes((10, 20, 30, alpha_fn(x, y))) for x in range(w)) for y in range(h))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
 class FakeClient:
     """Mocked obsws ReqClient with the same snake_case method names."""
 
@@ -30,6 +43,12 @@ class FakeClient:
         self.next_id = 1
         self.source_size = (1280, 720)
         self.zero_polls = 0
+        self.shots = {}         # source -> PNG bytes (default: fully opaque 8x8)
+        self.shot_fail = set()
+        self.active = {}
+        self.stream_service = NS(stream_service_type="rtmp_custom", stream_service_settings={
+            "server": "rtmps://a.rtmps.youtube.com:443/live2", "key": "abcd-efgh-ijkl-mnop"})
+        self.record_active = False
 
     def _c(self, name, *a):
         self.calls.append((name, *a))
@@ -72,7 +91,7 @@ class FakeClient:
         return NS(base_width=1920, base_height=1080, output_width=1920, output_height=1080, fps_numerator=60, fps_denominator=1)
 
     def get_scene_list(self):
-        return NS(current_program_scene_name=self.scenes[0] if self.scenes else None,
+        return NS(current_program_scene_name=self.current_scene or (self.scenes[0] if self.scenes else None),
                   scenes=[{"sceneName": s} for s in self.scenes])
 
     def create_scene(self, name):
@@ -185,9 +204,31 @@ class FakeClient:
 
     def start_record(self):
         self._c("start_record")
+        self.record_active = True
 
     def stop_record(self):
         self._c("stop_record")
+        self.record_active = False
+        return NS(output_path="/tmp/obsagent-test.mkv")
+
+    def get_source_screenshot(self, name, fmt, width, height, quality):
+        import base64
+        self._c("get_source_screenshot", name, fmt, width)
+        if name in self.shot_fail:
+            raise RuntimeError("no such source")
+        png = self.shots.get(name) or make_png(8, 8)
+        return NS(image_data="data:image/png;base64," + base64.b64encode(png).decode())
+
+    def press_input_properties_button(self, name, prop):
+        self._c("press_input_properties_button", name, prop)
+        if not any(i["inputName"] == name for i in self.inputs):
+            raise RuntimeError("no such input")
+
+    def get_source_active(self, name):
+        return NS(video_active=self.active.get(name, True), video_showing=True)
+
+    def get_stream_service_settings(self):
+        return self.stream_service
 
     def get_stats(self):
         return NS(cpu_usage=12.0, memory_usage=400.0, available_disk_space=1e5, active_fps=60.0,
@@ -200,7 +241,7 @@ class FakeClient:
                   output_total_frames=100)
 
     def get_record_status(self):
-        return NS(output_active=False, output_paused=False, output_timecode="00:00:00", output_bytes=0)
+        return NS(output_active=self.record_active, output_paused=False, output_timecode="00:00:00", output_bytes=0)
 
 
 @pytest.fixture

@@ -351,6 +351,8 @@ def render_email(plan_name: str, plan: dict, guest_name: str, link: str, host_na
         "4. Keep the tab open. I will bring you on air from my side.",
         "",
         "Please keep this link to yourself, it works like a key to the studio.",
+        "",
+        "Heads up: I use an AI assistant that transcribes the conversation live so it can pass me private notes during the show. The transcript stays on my computer. If you would rather not be transcribed, just tell me.",
     ]
     if contact:
         lines += ["", f"If anything goes wrong, reach me at {contact}."]

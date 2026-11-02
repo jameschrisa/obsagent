@@ -7,8 +7,9 @@ import re
 import json
 import os
 import sys
+from pathlib import Path
 
-from . import __version__, doctor, guests, mailer, paths, plans, profiles, stream, ws
+from . import __version__, doctor, guests, mailer, paths, plans, profiles, show, stream, ws
 
 
 class CliError(Exception):
@@ -27,11 +28,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("doctor", parents=[common], help="read-only environment probe")
     d.add_argument("--net", action="store_true", help="also run networkQuality (about 20s)")
+    d.add_argument("--plan", help="also check show readiness for this plan (roster, emails, Keychain, Mail.app)")
 
     w = sub.add_parser("ws", help="talk to obs-websocket").add_subparsers(dest="sub", required=True)
     w.add_parser("status", parents=[common])
     m = w.add_parser("monitor", parents=[common])
     m.add_argument("--seconds", type=int, default=20)
+    m.add_argument("--guests", metavar="PLAN", help="add a per-guest row each sample (source active, render ratio, blank flag)")
+    m.add_argument("--log", nargs="?", const="", metavar="PATH",
+                   help="append JSON lines; without PATH uses ~/.local/state/obsagent/sessions/<date>.jsonl")
+    sc = w.add_parser("scene", parents=[common], help="switch the program scene and verify")
+    sc.add_argument("name")
+    sn = w.add_parser("snapshot", parents=[common], help="save a PNG of a scene or source and report its visible-pixel ratio")
+    sn.add_argument("source", nargs="?", help="scene or source name (default: current program scene)")
+    sn.add_argument("--out", help="output file or directory (default ~/Documents/obsagent/snapshots/)")
+    sn.add_argument("--width", type=int, default=1280)
+    rf = w.add_parser("refresh", parents=[common], help="refresh a browser source (cache-less reload)")
+    rf.add_argument("source")
     w.add_parser("scenes", parents=[common])
     w.add_parser("inputs", parents=[common])
     for name in ("start-stream", "stop-stream", "start-record", "stop-record"):
@@ -102,6 +115,9 @@ def build_parser() -> argparse.ArgumentParser:
     gi.add_argument("--from", dest="sender", metavar="ADDR")
     gi.add_argument("--send", action="store_true", help="send immediately instead of opening a draft for review")
     gi.add_argument("--attach-guide", action="store_true")
+    gf = gu.add_parser("refresh", parents=[common], help="refresh the guests' OBS browser sources")
+    gf.add_argument("show")
+    gf.add_argument("--name")
     gr = gu.add_parser("remove", parents=[common])
     gr.add_argument("plan")
     gr.add_argument("name")
@@ -117,6 +133,18 @@ def build_parser() -> argparse.ArgumentParser:
     gg = gu.add_parser("guide", parents=[common], help="write a personal guest guide HTML per guest")
     gg.add_argument("plan")
     gg.add_argument("--name")
+
+    pfl = sub.add_parser("preflight", parents=[common], help="pass/warn/fail readiness rows for a plan (never starts a stream)")
+    pfl.add_argument("plan")
+    pfl.add_argument("--record", type=int, metavar="SECONDS", default=0, help="record a test clip and monitor it")
+
+    tr = sub.add_parser("triage").add_subparsers(dest="sub", required=True)
+    tr.add_parser("collect", parents=[common], help="gather logs, stats, settings and crashes into one masked report")
+
+    sh = sub.add_parser("show").add_subparsers(dest="sub", required=True)
+    sp = sh.add_parser("postshow", parents=[common], help="summarize the latest session log")
+    sp.add_argument("plan")
+    sp.add_argument("--rotate", action="store_true", help="also rotate the guest room and password")
 
     yt = sub.add_parser("youtube").add_subparsers(dest="sub", required=True)
     yt.add_parser("auth", parents=[common])
@@ -188,7 +216,7 @@ def print_diff(plan: dict):
 # ---- commands ----
 
 def cmd_doctor(a):
-    rep = doctor.run_doctor(net=a.net)
+    rep = doctor.run_doctor(net=a.net, plan=a.plan)
     out(rep, a, doctor.print_text)
     return 0 if rep["healthy"] else 1
 
@@ -208,10 +236,27 @@ def cmd_ws(a):
     if a.sub == "status":
         out(ws.status(cl), a, kv_text)
     elif a.sub == "monitor":
-        res = ws.monitor(cl, a.seconds)
+        gsrc, log = None, None
+        if a.guests:
+            try:
+                gsrc = show.guest_inputs(a.guests)
+            except guests.GuestError as e:
+                raise CliError(str(e))
+        if a.log is not None:
+            log = Path(a.log).expanduser() if a.log else show.session_log_path()
+        res = ws.monitor(cl, a.seconds, guest_sources=gsrc,
+                         on_sample=(lambda smp: show.append_log(log, show.sample_line(smp))) if log else None)
+        if log:
+            show.append_log(log, {"type": "summary", "summary": res["summary"], "problems": res["problems"]})
+            res["log"] = str(log)
 
         def txt(r):
             kv_text(r["summary"])
+            for g in (r["samples"][-1].get("guests") or []):
+                print(f"guest {g['name']}: active={g['active']} render_ratio={g['render_ratio']}"
+                      f"{'  FLAGGED blank' if g['flagged'] else ''}")
+            if r.get("log"):
+                print(f"log: {r['log']}")
             if r["problems"]:
                 print("problems:")
                 for p_ in r["problems"]:
@@ -219,6 +264,22 @@ def cmd_ws(a):
             else:
                 print("no problems flagged")
         out(res, a, txt)
+    elif a.sub == "scene":
+        res = ws.set_scene(cl, a.name)
+        out(res, a, kv_text)
+        return 0 if res["verified"] else 1
+    elif a.sub == "snapshot":
+        try:
+            res = ws.snapshot(cl, a.source, a.out, a.width)
+        except ValueError as e:
+            raise CliError(str(e))
+        out(res, a, lambda r: print(f"{r['path']}\nvisible pixels: "
+                                    f"{'unknown' if r['visible_ratio'] is None else str(round(r['visible_ratio'] * 100, 1)) + '%'}"))
+    elif a.sub == "refresh":
+        try:
+            out(ws.refresh(cl, a.source), a, kv_text)
+        except Exception as e:
+            raise CliError(f"could not refresh {a.source!r}: {e}")
     elif a.sub == "scenes":
         out({"scenes": ws.scenes(cl)}, a, lambda d: print("\n".join(d["scenes"])))
     elif a.sub == "inputs":
@@ -471,6 +532,21 @@ def cmd_guests(a):
                 if not a.send:
                     print("drafts are open in Mail.app for review; nothing was sent")
             out({"invites": res}, a, lambda d: itxt(d["invites"]))
+        elif a.sub == "refresh":
+            cl = need_ws()
+            rows = []
+            for src in show.guest_inputs(a.show, a.name):
+                try:
+                    ws.refresh(cl, src)
+                    rows.append({"source": src, "refreshed": True})
+                except Exception as e:
+                    rows.append({"source": src, "refreshed": False, "error": str(e)[:200]})
+
+            def rtxt(d):
+                for r in d["refreshed"]:
+                    print(f"{r['source']}: " + ("refreshed" if r["refreshed"] else f"FAILED {r['error']}"))
+            out({"refreshed": rows}, a, rtxt)
+            return 0 if all(r["refreshed"] for r in rows) else 1
         elif a.sub == "remove":
             g = guests.remove_guest(a.plan, a.name)
             out({"removed": g, "note": f"run `obsagent plan apply {a.plan}` to remove its OBS source"}, a, kv_text)
@@ -549,7 +625,39 @@ def cmd_youtube(a):
     return 0
 
 
-COMMANDS = {"doctor": cmd_doctor, "ws": cmd_ws, "preset": cmd_preset, "profile": cmd_profile,
+def cmd_preflight(a):
+    cl = try_ws()
+    rep = show.run_preflight(a.plan, cl, record=a.record)
+    out(rep, a, show.print_preflight)
+    return 0 if rep["ok"] else 1
+
+
+def cmd_triage(a):
+    rep = show.triage_collect(try_ws())
+    out(rep, a, show.print_triage)
+    return 0
+
+
+def cmd_show(a):
+    try:
+        rep = show.postshow(a.plan, a.rotate)
+    except guests.GuestError as e:
+        raise CliError(str(e))
+
+    def txt(r):
+        s = r["session"]
+        if s:
+            kv_text(s)
+        else:
+            print(r["note"])
+        if r.get("rotated"):
+            print(f"rotated: new room {r['rotated']['room']}; guests {', '.join(r['rotated']['guests'])}")
+            print(r["reminder"])
+    out(rep, a, txt)
+    return 0
+
+
+COMMANDS = {"preflight": cmd_preflight, "triage": cmd_triage, "show": cmd_show, "doctor": cmd_doctor, "ws": cmd_ws, "preset": cmd_preset, "profile": cmd_profile,
             "stream": cmd_stream, "plan": cmd_plan, "guests": cmd_guests, "youtube": cmd_youtube}
 
 

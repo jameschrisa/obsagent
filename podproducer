@@ -1,0 +1,15 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["pyyaml"]
+# ///
+"""podproducer: a live AI producer that whispers playful private cues to the host of a podcast or live show."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from podproducer_lib.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())

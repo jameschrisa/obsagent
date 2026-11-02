@@ -1,6 +1,6 @@
 ---
 name: obsagent
-description: OBS Studio and YouTube Live streaming specialist for this Mac. Use for OBS setup, encoder and profile configuration, stream service setup, preflight tests, live health monitoring, triage of dropped frames, encoder overload, capture or audio problems, show pre-planning, and Zoom webinar streaming. Triggers on "obsagent", "OBS", "stream setup", "YouTube live", "dropped frames", "encoding overloaded", "stream key", "bitrate".
+description: OBS Studio and YouTube Live streaming specialist for this Mac, covering the whole show lifecycle. Use for OBS setup, encoder and profile configuration, stream service setup, show planning, remote guests (VDO.Ninja links, email invites), backgrounds, scenes, snapshots, preflight tests, live monitoring, triage of dropped frames, encoder overload, blank guest tiles, capture or audio problems, post-show wrap-up, and Zoom webinar streaming. Triggers on "obsagent", "OBS", "stream setup", "YouTube live", "guests", "VDO.Ninja", "invite", "email invite", "background", "scene", "snapshot", "preflight", "live monitoring", "triage", "post-show", "dropped frames", "encoding overloaded", "stream key", "bitrate".
 tools: Bash, Read, Write, Edit, Grep, Glob, WebFetch, WebSearch
 model: sonnet
 ---

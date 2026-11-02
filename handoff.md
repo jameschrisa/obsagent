@@ -1,87 +1,118 @@
 # obsagent handoff
 
-Last session: 2026-10-31, ended about 21:10 PT. Read this first, then SPEC.md if you need the design.
+Last session: 2026-11-01, ended about 21:50 PT. Read this first, then SPEC.md if you need the design.
 
 ## Where we are
 
-OBS is fully set up for a YouTube talking-head show, and one short test stream reached YouTube. **Next step: a test stream of at least 60 seconds, unlisted, watched with `/obsagent live`.**
+OBS is set up for a YouTube talking-head show with remote guests. Guest video through VDO.Ninja works, invite emails send from the host's own address, and the new wallpaper is live. A second agent, **pod producer**, gives the host private, playful live cues.
 
-The first test (21:03) connected to `rtmps://a.rtmps.youtube.com:443/live2` and sent 1,003 frames at about 17 Mbps with 0 dropped frames. The user stopped it after 17 seconds, before the YouTube Studio preview could appear, and nothing has streamed since. YouTube Studio needs about 10-30 s of data before the preview shows.
+**Next steps:**
+1. The user installs BlackHole (`brew install --cask blackhole-2ch`, needs their password). Then run `podproducer check` and set up the OBS monitoring steps it lists.
+2. Turn off **Browser Source Hardware Acceleration** for good. The OBS log at 21:29 still showed it on. Do it from OBS > Settings > Advanced, or edit `global.ini` while OBS is closed. Confirm with `obsagent preflight plans/talking-head.yaml`.
+3. **YouTube test streaming is on hold** at the user's request. Don't push it.
 
 ## What exists
 
-- **Repo** `~/CODE/obs-agent`: `git init` was run but nothing is committed, so every file is untracked.
-- **CLI** `obsagent`: a uv script, symlinked at `~/.local/bin/obsagent`. Code is in `obsagent_lib/`, and `--json` works on every command.
-- **Claude Code entry points:**
-  - Skill: `claude/skills/obsagent/SKILL.md`, symlinked to `~/.claude/skills/obsagent`. Called as `/obsagent`.
-  - Subagent: `claude/agents/obsagent.md`, symlinked to `~/.claude/agents/obsagent.md`. Called as `obsagent`.
-- **Knowledge base** `knowledge/`: 8 files, indexed in `knowledge/INDEX.md`. Every number has a source URL.
-- **Presets** `presets/`: 9 presets. The YouTube ones use YouTube's recommended H.264 bitrates and 128k AAC.
-- **Show plans** `plans/`: `talking-head.yaml` is the live plan, and `example.yaml` is the sample.
-- **Tests:** 62 pass. Run them with `uv run -q --with pytest --with pyyaml --with obsws-python pytest -q`.
+- **Repo** `~/CODE/obs-agent`, public at https://github.com/jameschrisa/obsagent (branch `main`).
+- **CLI `obsagent`** (`obsagent_lib/`, symlinked at `~/.local/bin/obsagent`). `--json` works on every command.
+  - `doctor [--net] [--plan P]`: checks the machine, plus a show plan's background, guest roster, emails, Keychain password and mail sender. It also flags the BrowserHWAccel setting.
+  - `profile`, `preset`, `stream` (named YouTube keys: `youtube` default, `youtube:alt`), `plan validate|apply`.
+  - `ws status|monitor|scene|snapshot|refresh|scenes|inputs|start/stop-stream|start/stop-record`. `monitor` takes `--guests PLAN` (flags a guest tile that goes blank) and `--log`.
+  - `guests add|remove|list|links|rotate|guide|refresh|invite|set-email|set-sender|senders`.
+  - `preflight PLAN [--record N]`: one pass/warn/fail report. It never streams.
+  - `triage collect`: gathers OBS log errors, stats, settings and crash report names, with secrets masked.
+  - `show postshow PLAN [--rotate]`.
+- **CLI `podproducer`** (`podproducer_lib/`, symlinked at `~/.local/bin/podproducer`).
+  - `prep SHOW`: writes a `producer:` brief into the plan.
+  - `check`: confirms devices, model, whisper and the claude CLI.
+  - `run SHOW`: live capture, transcription, cues, and a local dock page.
+  - `recap`, `sessions`.
+  - The design and user guide are in `docs/pod-producer.md`.
+- **Claude Code entry points**, symlinked into `~/.claude`:
+  - `/obsagent` skill and `obsagent` subagent: setup, plans, guests, prep, preflight, live, triage, postshow, Zoom.
+  - `/pod-producer` skill and `pod-producer` subagent: prep, check, live, cues, recap.
+- **Knowledge** `knowledge/`: OBS settings, YouTube, macOS, troubleshooting (every bug below), websocket, Zoom, guests, preflight checklist.
+- **Docs** `docs/`:
+  - `guest-guide.html`: the guest guide draft for the user to review, then convert to DOCX with pandoc. It covers email links, phone held sideways, newest link wins, and AI transcription consent.
+  - `pod-producer.md`.
+- **Tests:** 155 pass. Run them with `uv run --with pytest --with pyyaml --with obsws-python pytest -q`.
 
-## Live OBS state (OBS 33.0.1, obs-websocket 5.7.6)
+## Live state
 
-- **Profile `obsagent-youtube-1080p60`** (active; its directory is named `obsagentyoutube1080p60`):
+- **OBS 33.0.1**, obs-websocket on port 4455 with auth. The password is in the Keychain (service `obsagent`, account `obs-websocket`).
+- **Profile `obsagent-youtube-1080p60`** (active):
   - Advanced output mode.
-  - Apple VideoToolbox H.264, 17000 kbps CBR, keyframe 2 s, High profile, no B-frames.
-  - 1920x1080 at 60 fps.
+  - Apple VideoToolbox H.264, 17000 kbps CBR, keyframe 2 s.
+  - 1080p60.
   - CoreAudio AAC at 128k, 48 kHz.
-  - ApplyServiceSettings=false.
-- **Profile `Untitled`:** restored to the original defaults (Simple mode, x264).
-- **Stream service:** rtmp_custom to YouTube RTMPS, currently using the default key.
-- **Stream keys** (Keychain service `obsagent`, see `obsagent stream list-keys`):
-  - `youtube`: the default account, ends `awft`. This is the one OBS uses now.
-  - `youtube:alt`: the second YouTube account, ends `8zpy`, added 2026-11-01. Switch with `obsagent stream set-service --target youtube --rtmps --key-name alt`.
-  - The `youtube:alt` key was pasted into a chat. Resetting it in YouTube Studio is recommended, followed by re-storing it with `set-key --key-name alt`.
-- **WebSocket:** port 4455, auth on. The password is in the Keychain (service `obsagent`, account `obs-websocket`).
-- **Scenes** (collection "Untitled"):
-  - `Camera`: StreamCam full frame, plus StreamCam Mic.
-  - `Screen + camera`: main display full frame (`display_uuid` 0EAFFB01-D888-45A3-933A-9B23725F24CC), with a StreamCam inset of 480x270 at (1400, 770), plus StreamCam Mic.
-  - The default `Scene` is untouched.
-  - `Mic/Aux` (MacBook mic) is muted, not deleted.
-- **macOS permissions:** granted. The OBS log at startup confirms camera, mic, screen capture and input monitoring.
-- **Machine:**
-  - M1 Pro, 16 GB, macOS 14.6.1.
-  - Upload measured at 393 Mbps.
-  - About 50 GB free on disk.
+  - The `Untitled` profile is the restored original.
+- **Stream service:** YouTube RTMPS with key `youtube` (ends `awft`). `youtube:alt` (ends `8zpy`) is stored but not active. That alt key was pasted in chat, so a reset is recommended.
+- **Scenes** (all built by `plan apply plans/talking-head.yaml`, every positioned item locked):
+  - `Camera`: StreamCam full frame.
+  - `Screen + camera`: main display with a 480x270 StreamCam inset at the bottom right.
+  - `Panel`: host and guests. 1 guest is side by side, 2 are two on top and one below, 3 are a 2x2 grid.
+  - `Guest: <name>`: a close-up per guest.
+  - A shared `Background` image is at the bottom of each scene.
+  - `Mic/Aux` is muted.
+- **Background:** `~/Documents/obsagent/backgrounds/blue-peach-diagonal.jpg`, a Pexels photo cropped to 1920x1080. It is kept outside the repo for licensing. The in-repo fallback is `assets/backgrounds/slate-soft.png`.
+- **Guests:**
+  - Show `talking-head`, room `obsa1f85z6lxkx`, rotated 2026-11-01. Its password is in the Keychain (`vdo:talking-head`), and its state is in `~/.config/obsagent/shows/`.
+  - The roster has only "Test Guest" (email jchrisa@me.com). Remove it before a real show.
+- **Email:**
+  - Invites go through Mail.app. The default sender is `James <james@ausvrn.com>` (Fastmail account added to Mail on 2026-11-01).
+  - `james@signetscience.com` (Google Workspace) also works with `--from`.
+  - Both were tested end to end. The Gmail connector in Claude is read-only, so it isn't used.
+- **Pod producer:**
+  - whisper.cpp model at `~/.local/share/podproducer/models/ggml-small.en.bin` (sha1 db8a495a...).
+  - Session data is in `~/.local/state/podproducer/sessions/`.
+  - Verified with synthetic voices: whisper transcribed them exactly, and a replay through `claude -p` (sonnet) returned 2 good cues in 14 s.
+  - Not yet run with live audio, because BlackHole is not installed.
+- **Machine:** M1 Pro, 16 GB, macOS 14.6.1, about 393 Mbps upload, about 45 GB free.
 
 ## Open items, in order
 
-1. **60-second unlisted test stream.** In YouTube Studio go to Create > Go live, open the **Stream** tab (not Webcam), and select the stored key. Start in OBS (or the user says "start the stream"), then run `obsagent ws monitor --seconds 120 --json`. Confirm the preview appears and stream health is good.
-2. **Watch render lag.** The first run had 0.7% lagged frames (7 of 1003) from rendering stalls. 60 fps screen capture is the most likely cause. If it rises above 1%, try 30 fps on the screen source or the 1080p30 preset.
-3. **Screen privacy.** The `Screen + camera` scene captures the whole main display, including OBS itself, the terminal, tabs and notifications. The user was offered window capture instead and hasn't answered.
-4. **Claude Docs sync for plans** (SKILL.md, "Pre-planning with Claude Docs"). It is written but not tried yet. The user asked to link a "Claude Duet" account. No such connector exists, so Claude Docs stands in, and the user hasn't confirmed whether Duet is something else.
-5. **YouTube API commands** (`obsagent youtube ...`). These are untested and need `~/.config/obsagent/client_secret.json` (an OAuth desktop client from Google Cloud).
-6. **Zoom** (`/obsagent zoom`, preset `zoom-720p30`, `knowledge/zoom.md`). Not tried. Zoom publishes no bitrate figure, so the 3000 kbps setting is our own choice.
-7. **Housekeeping:**
-   - First git commit.
-   - Delete `.profiles-backup-*` once the setup is stable.
-   - `src_ref/` (OBS source copies) is gitignored.
+1. **BlackHole and OBS monitoring.** Install BlackHole, then set OBS > Settings > Audio > Advanced > Monitoring Device to BlackHole 2ch. Set each guest source to Monitor and Output, and leave the host mic off. Then do a live `podproducer run talking-head` with a guest on the phone, and open the dock in OBS (Docks > Custom Browser Docks, URL http://127.0.0.1:8765).
+2. **Turn off BrowserHWAccel** (see above).
+3. **Guest guide review** by the user, then DOCX conversion.
+4. **Unverified live behaviour:**
+   - The preflight host-mic meter. It worked once and read -47 dB.
+   - `render_ratio` cannot tell a guest who hasn't joined from a blank tile.
+   - Pod producer dock and recap on a real session.
+   - A producer brief for the real show (`/pod-producer prep talking-head`).
+5. **On hold or untested:**
+   - YouTube test stream (on hold).
+   - YouTube API commands (need `client_secret.json`).
+   - Zoom.
+   - Screen privacy (whole display versus window capture).
+   - Claude Docs sync. "Claude Duet" was never identified.
 
 ## Known problems already fixed (do not regress)
 
-- **Profile switches over websocket are slow and asynchronous.** `profile apply` now waits for each switch and verifies it before writing, then reads every value back. Once, OBS ignored SetCurrentProfile entirely; the fix was to quit OBS and edit the files directly. The CLI writes files only while OBS is closed.
-- **OBS rewrites FPSType to 2** (FPSNum/FPSDen) by itself. `already_current()` treats this as equal when the live fps matches, so `plan apply` skips the profile step and does not switch profiles.
-- **Never call `GetInputPropertiesListPropertyItems` on a `screen_capture` input.** It crashes OBS 33 (SIGSEGV in strlen inside obs-websocket). `obsagent_lib/displays.py` gets the display UUID from CoreGraphics instead.
-- **A screen source created without `display_uuid` captures nothing.** The log line is "Invalid target display ID: 0".
-- **Use CoreAudio_AAC, not ffmpeg_aac,** for the audio encoder.
-- All of these are written up in `knowledge/troubleshooting.md`.
+- **Slow profile switches:** they are asynchronous, so apply waits for each switch, verifies it and reads every value back.
+- **Screen capture crash:** never call `GetInputPropertiesListPropertyItems` on `screen_capture`, because it crashes OBS 33. The display UUID comes from CoreGraphics instead.
+- **Blank screen source:** a screen source without `display_uuid` captures nothing.
+- **Audio encoder:** use CoreAudio_AAC, not ffmpeg_aac.
+- **FPSType:** OBS rewrites it to 2, and that counts as equal.
+- **Blank guest tiles:** a browser source renders fully transparent while Browser Source Hardware Acceleration is on. The guest's audio still works, which makes it misleading.
+- **Dragged tiles:** tiles were dragged in the preview, so plan apply now locks them.
+- **Error 601 when replacing a source:** a removed source stays referenced. The fix renames it out of the way before removal.
+- **Mail.app errors:** -1700 came from iterating references (fixed by looping by index), and -1743 means Automation permission is missing.
+- **Narrow guest picture:** the phone was held upright. The guide now says to hold it sideways.
 
 ## Rules the agent follows
 
-- Start or stop a stream only when the user asks in that message, and pass `--yes` only then.
-- Run a dry run before every `profile apply` or `plan apply`.
-- Never print stream keys, tokens or passwords.
-- Before writing to live OBS, check for an open OBS dialog. A blocked UI causes switch timeouts.
+- Start or stop a stream, or send email, only when the user asks in that message. Say which YouTube key is active before any stream.
+- Default to drafts for invites. Show the recipient, sender and subject, and get an explicit OK before `--send`.
+- Run a dry run before `profile apply` or `plan apply`. Before writing to live OBS, check for an open OBS dialog.
+- Never print stream keys, room passwords or tokens. Before every push to the public repo, scan for them.
+- Guests must be told about AI transcription. The line is in the guide and in the invite email.
+- Pod producer cues are playful, private to the host, short, and never pressure guests.
 - User preference: no em or en dashes anywhere.
 
 ## How to resume
 
 ```
 cd ~/CODE/obs-agent
-obsagent doctor            # OBS running, websocket reachable, no fails
-obsagent ws status         # profile obsagent-youtube-1080p60, 1920x1080 @ 60
+obsagent preflight plans/talking-head.yaml   # one report on OBS, scenes, guests, mail, key
+podproducer check                            # audio devices, model, whisper, claude
 ```
-
-Then in Claude Code, use `/obsagent live` once the user has started the test stream.
