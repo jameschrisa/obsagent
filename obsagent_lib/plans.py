@@ -42,7 +42,7 @@ BG_COLOR_KIND = "color_source_v3"
 BG_IMAGE_EXT = {".png", ".jpg", ".jpeg"}
 HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MAX_GUESTS = 3
+MAX_GUESTS = 4
 GUEST_INPUT_RE = re.compile(r"^Guest (\d+): (.+)$")
 
 # Browser source settings, confirmed in obs-browser master (obs-browser-plugin.cpp,
@@ -324,14 +324,18 @@ def panel_tiles(n: int, canvas: tuple[int, int] = (1920, 1080)) -> list[dict]:
     """Tile rectangles for n people (host first). Designed on 1920x1080, scaled to the canvas."""
     if n < 2 or n > MAX_GUESTS + 1:
         raise PlanError(f"panel layout supports 2 to {MAX_GUESTS + 1} people, got {n}")
+    # (x, y, w, h) on 1920x1080. Five people: three 640x360 tiles on top, two centered below.
+    big = lambda x, y: (x, y, 960, 540)
+    small = lambda x, y: (x, y, 640, 360)
     rects = {
-        2: [(0, 270), (960, 270)],
-        3: [(0, 0), (960, 0), (480, 540)],
-        4: [(0, 0), (960, 0), (0, 540), (960, 540)],
+        2: [big(0, 270), big(960, 270)],
+        3: [big(0, 0), big(960, 0), big(480, 540)],
+        4: [big(0, 0), big(960, 0), big(0, 540), big(960, 540)],
+        5: [small(0, 180), small(640, 180), small(1280, 180), small(320, 540), small(960, 540)],
     }[n]
     sx, sy = canvas[0] / 1920.0, canvas[1] / 1080.0
     return [{"layout": "tile", "x": round(x * sx, 2), "y": round(y * sy, 2),
-             "w": round(960 * sx, 2), "h": round(540 * sy, 2)} for x, y in rects]
+             "w": round(w * sx, 2), "h": round(h * sy, 2)} for x, y, w, h in rects]
 
 
 def guest_input_name(g: dict) -> str:

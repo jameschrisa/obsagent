@@ -36,12 +36,12 @@ obsagent guests rotate <plan>                # new room and password, old links 
 obsagent plan apply <plan> --dry-run         # shows the guest sources, masked
 ```
 
-Up to 3 guests. The plan needs a `guests:` block (see `plans/talking-head.yaml`). Guide fields come from the plan: `title`, `show_time`, `tech_check`, `host_contact`, `youtube.watch_url`. Anything missing stays highlighted yellow in the guide, and the command lists it.
+Up to 4 guests (5 people on screen with the host). The plan needs a `guests:` block (see `plans/talking-head.yaml`). Guide fields come from the plan: `title`, `show_time`, `tech_check`, `host_contact`, `youtube.watch_url`. Anything missing stays highlighted yellow in the guide, and the command lists it.
 
 ## What plan apply builds
 
 - One browser source per guest, named `Guest N: NAME`, sized 1920x1080, pointing at the OBS solo link. Re-running updates the URL.
-- A panel scene with your camera, the guest tiles and your mic. Two people sit side by side, three put two on top and one centered below, four make a 2x2 grid. Your camera is always tile 1.
+- A panel scene with your camera, the guest tiles and your mic. Two people sit side by side, three put two on top and one centered below, four make a 2x2 grid, five put three smaller tiles on top and two centered below. Your camera is always tile 1.
 - With `solo_scenes: true`, a scene `Guest: NAME` per guest, that guest full frame plus your mic.
 - Guests removed from the roster lose their `Guest N: ...` source on the next apply. Their solo scene stays until you delete it.
 

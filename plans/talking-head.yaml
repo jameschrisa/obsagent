@@ -41,7 +41,7 @@ youtube:
 # Remote guests via VDO.Ninja. Add people with: obsagent guests add talking-head --name NAME
 # Links and the room password are never stored here (state in ~/.config/obsagent/shows, password in Keychain).
 guests:
-  max: 3
+  max: 4
   panel_scene: "Panel"
   solo_scenes: true
   monitor: monitor_and_output   # guest audio is monitored so the pod producer hears guests via BlackHole

@@ -46,11 +46,11 @@ def test_state_permissions_and_no_password_in_file(env, tmp_path):
     assert env["vdo:show"] not in f.read_text()
 
 
-def test_max_three_and_slot_reuse(env):
-    for n in ("A", "B", "C"):
+def test_max_four_and_slot_reuse(env):
+    for n in ("A", "B", "C", "D"):
         guests.add_guest("show", n)
-    with pytest.raises(guests.GuestError, match="at most 3"):
-        guests.add_guest("show", "D")
+    with pytest.raises(guests.GuestError, match="at most 4"):
+        guests.add_guest("show", "F")
     guests.remove_guest("show", "B")
     _, g, _ = guests.add_guest("show", "E")
     assert g["slot"] == 2
@@ -87,11 +87,11 @@ def test_list_and_add_output_never_show_password(env, capsys):
     assert env["vdo:show"] not in o and "Ann" in o
 
 
-def test_fourth_guest_error_exit(env, capsys):
-    for n in "ABC":
+def test_fifth_guest_error_exit(env, capsys):
+    for n in "ABCD":
         cli.main(["guests", "add", "show", "--name", n])
     capsys.readouterr()
-    assert cli.main(["guests", "add", "show", "--name", "D"]) == 1
+    assert cli.main(["guests", "add", "show", "--name", "E"]) == 1
 
 
 def test_rotate_changes_everything(env, capsys):
@@ -136,7 +136,7 @@ def test_guide_fills_placeholders(env, tmp_path, capsys):
 def test_validate_guest_fields():
     base = _plan()
     assert plans.validate(base) == []
-    bad = _plan({"guests": {"max": 4, "solo_scenes": "yes", "bogus": 1}, "show_time": 12,
+    bad = _plan({"guests": {"max": 5, "solo_scenes": "yes", "bogus": 1}, "show_time": 12,
                  "youtube": {"title": "t", "watch_url": "ftp://x"}})
     j = " ".join(plans.validate(bad))
     for w in ("guests.max", "solo_scenes", "unknown keys", "show_time", "watch_url"):
@@ -155,6 +155,14 @@ def test_panel_tiles(n, expect):
     t = plans.panel_tiles(n)
     assert [(x["x"], x["y"]) for x in t] == [(float(a), float(b)) for a, b in expect]
     assert all(x["w"] == 960 and x["h"] == 540 for x in t)
+
+
+def test_panel_tiles_five():
+    t = plans.panel_tiles(5)
+    assert [(x["x"], x["y"]) for x in t] == [(0.0, 180.0), (640.0, 180.0), (1280.0, 180.0), (320.0, 540.0), (960.0, 540.0)]
+    assert all(x["w"] == 640 and x["h"] == 360 for x in t)
+    with pytest.raises(plans.PlanError):
+        plans.panel_tiles(6)
 
 
 def _client(**kw):

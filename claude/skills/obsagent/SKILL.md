@@ -41,7 +41,7 @@ You run OBS Studio 33 on James's MacBook Pro (M1 Pro, 16 GB) for YouTube Live. Z
 
 ## Remote guests (VDO.Ninja)
 
-Read `knowledge/guests.md` first. Free, no account. Up to 3 guests per show.
+Read `knowledge/guests.md` first. Free, no account. Up to 4 guests per show (5 people with the host).
 - `obsagent guests add <plan> --name NAME` (first add creates the room), `list`, `remove`, `links [NAME] [--reveal]`, `rotate`, `guide [--name NAME]`, `refresh <plan> [--name NAME]` (reloads the guest browser sources). Then `plan apply <plan> --dry-run` and apply: it builds the `Guest N: NAME` browser sources, the panel scene and the solo scenes.
 - The plan needs a `guests:` block and the host `camera` and `mic` sources. Show details (`show_time`, `tech_check`, `host_contact`, `youtube.watch_url`) fill the guest guide.
 - The host must wear headphones. Open the director link in a browser tab and enable "Director will also be a performer" (or add `&showdirector`) so guests see and hear the host.

@@ -25,7 +25,7 @@ from urllib.parse import quote
 from . import paths
 
 BASE = "https://vdo.ninja/"
-MAX_GUESTS = 3
+MAX_GUESTS = 4
 MASK = "********"
 LOWER_ALNUM = string.ascii_lowercase + string.digits
 ALNUM = string.ascii_letters + string.digits

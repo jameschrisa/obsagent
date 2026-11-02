@@ -50,7 +50,7 @@ OBS is set up for a YouTube talking-head show with remote guests. Guest video th
 - **Scenes** (all built by `plan apply plans/talking-head.yaml`, every positioned item locked):
   - `Camera`: StreamCam full frame.
   - `Screen + camera`: main display with a 480x270 StreamCam inset at the bottom right.
-  - `Panel`: host and guests. 1 guest is side by side, 2 are two on top and one below, 3 are a 2x2 grid.
+  - `Panel`: host and guests. 1 guest is side by side, 2 are two on top and one below, 3 are a 2x2 grid, 4 are three smaller tiles on top and two below.
   - `Guest: <name>`: a close-up per guest.
   - A shared `Background` image is at the bottom of each scene.
   - `Mic/Aux` is muted.
