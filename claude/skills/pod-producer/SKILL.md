@@ -26,6 +26,6 @@ The tool is `./podproducer` in the obs-agent repo (symlinked to PATH by the user
 
 ## Consent rule
 
-Before any live run, remind the host to tell every guest that the show is transcribed by an AI assistant that gives the host private cues. Transcripts and audio stay local (mode 700 under `~/.local/state/podproducer`); audio is deleted after transcription unless `--keep-audio`.
+Before any live run, remind the host to tell every guest that the show is transcribed by an AI assistant that gives the host private cues. Also tell them the privacy facts: speech to text runs locally (whisper.cpp); audio stays on the Mac and is deleted after transcription unless `--keep-audio`; the transcript is saved locally (mode 700 under `~/.local/state/podproducer`); and transcript windows are sent to Anthropic through the Claude CLI to generate cues and recaps. Make sure guests know that. Old sessions can be removed with `podproducer sessions prune`.
 
 Return at most 200 words.

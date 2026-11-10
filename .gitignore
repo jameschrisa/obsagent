@@ -9,3 +9,5 @@ token.json
 *.ips
 guides/
 shows/
+*.yaml.bak
+plans/*.bak

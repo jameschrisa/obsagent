@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import __version__, bridge, doctor, guests, mailer, paths, plans, profiles, show, stream, ws
+from . import __version__, bridge, doctor, guests, mailer, panelguard, paths, plans, profiles, show, stream, ws
 
 
 class CliError(Exception):
@@ -690,6 +690,9 @@ COMMANDS = {"serve": cmd_serve, "preflight": cmd_preflight, "triage": cmd_triage
 
 
 def main(argv=None) -> int:
+    refused = panelguard.check("obsagent", sys.argv[1:] if argv is None else argv)
+    if refused is not None:
+        return refused
     args = build_parser().parse_args(argv)
     try:
         return COMMANDS[args.cmd](args)

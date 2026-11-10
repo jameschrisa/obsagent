@@ -12,10 +12,14 @@ import time
 import wave
 from pathlib import Path
 
+from obsagent_lib import panelguard
+
 from . import brain, capture, dock, paths, plan, transcribe
 
 CONSENT = ("Reminder: tell every guest that this show is transcribed by an AI assistant that gives the host private cues. "
-           "Transcripts stay local under ~/.local/state/podproducer. Audio is deleted after transcription unless --keep-audio.")
+           "Speech to text runs locally (whisper.cpp). Audio stays on this Mac and is deleted after transcription unless --keep-audio. "
+           "The transcript is saved locally under ~/.local/state/podproducer, and transcript windows are sent to Anthropic "
+           "through the Claude CLI to generate cues and recaps. Make sure guests know that.")
 
 RECAP_SYSTEM = ("You are a podcast producer writing a post-show recap for the host. Be warm and a little playful. "
                 "Only use what is in the transcript; never invent quotes or put words in anyone's mouth. "
@@ -179,6 +183,7 @@ def cmd_run(a) -> int:
             print(f"Dock: http://127.0.0.1:{port}")
             print(dock.DOCK_HELP.format(port=port))
         print(f"Session: {sess}")
+        print(f"Stored under {paths.sessions_dir()}. Remove old sessions with: podproducer sessions prune --older-than 30 --yes")
         if a.once:
             for c in b.step(store.replay_elapsed):
                 print(f"[cue p{c['priority']}] ({c['type']}) {c['text']}")
@@ -247,10 +252,61 @@ def cmd_recap(a) -> int:
     return 0
 
 
+def _dir_size(d: Path) -> int:
+    total = 0
+    for f in d.rglob("*"):
+        try:
+            if f.is_file() and not f.is_symlink():
+                total += f.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def _human(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n} B"
+
+
+def _delete_sessions(targets: list, yes: bool, label: str) -> int:
+    total = sum(_dir_size(d) for d in targets)
+    for d in targets:
+        print(f"{'delete' if yes else 'would delete'}  {d.name}  {_human(_dir_size(d))}")
+    if not targets:
+        print(f"Nothing to delete ({label}).")
+        return 0
+    if not yes:
+        print(f"Dry run: {len(targets)} session(s), {_human(total)}. Add --yes to delete.")
+        return 0
+    for d in targets:
+        shutil.rmtree(d)
+    print(f"Deleted {len(targets)} session(s), {_human(total)}.")
+    return 0
+
+
 def cmd_sessions(a) -> int:
+    root = paths.sessions_dir()
+    if a.delete:
+        if a.action:
+            print("error: use either `prune` or --delete NAME")
+            return 2
+        name = a.delete
+        d = (root / name) if name == Path(name).name and name not in (".", "..") else None
+        if d is None or not d.is_dir() or d.is_symlink():
+            print(f"error: no session named {name!r} under {root}")
+            return 1
+        return _delete_sessions([d], a.yes, name)
+    if a.action == "prune":
+        cutoff = time.time() - a.older_than * 86400
+        old = [d for d in paths.list_sessions() if not d.is_symlink() and d.stat().st_mtime < cutoff]
+        return _delete_sessions(old, a.yes, f"older than {a.older_than} days")
     for s in paths.list_sessions():
         n = len(transcribe.read_transcript(s / "transcript.jsonl"))
-        print(f"{s.name}  {n} lines" + ("  recap" if (s / "recap.md").exists() else ""))
+        print(f"{s.name}  {n} lines  {_human(_dir_size(s))}" + ("  recap" if (s / "recap.md").exists() else ""))
+    print(f"Stored under {root}. Remove old ones: podproducer sessions prune --older-than 30 (add --yes to delete).")
     return 0
 
 
@@ -286,11 +342,18 @@ def build_parser():
     s.add_argument("--show")
     s.add_argument("--model", default="sonnet")
     s.set_defaults(fn=cmd_recap)
-    s = sub.add_parser("sessions", help="list sessions")
+    s = sub.add_parser("sessions", help="list sessions; `prune` removes old ones (dry run unless --yes)")
+    s.add_argument("action", nargs="?", choices=["prune"])
+    s.add_argument("--older-than", type=int, default=30, metavar="DAYS", help="prune: sessions older than this (default 30)")
+    s.add_argument("--delete", metavar="NAME", help="delete one session by name (needs --yes)")
+    s.add_argument("--yes", action="store_true", help="actually delete; without it nothing is removed")
     s.set_defaults(fn=cmd_sessions)
     return p
 
 
 def main(argv=None) -> int:
+    refused = panelguard.check("podproducer", sys.argv[1:] if argv is None else argv)
+    if refused is not None:
+        return refused
     a = build_parser().parse_args(argv)
     return a.fn(a)

@@ -112,10 +112,15 @@ def parse_response(raw: str) -> dict | None:
     return {"cues": cues[:MAX_CUES], "energy": energy, "talk_share": ts}
 
 
+# Text in, text out only: no tools, no MCP servers (strict with none configured), and no user/project/local
+# settings sources, so CLAUDE.md, hooks and plugins from settings do not load.
+NO_TOOLS_FLAGS = ["--tools", "", "--strict-mcp-config", "--setting-sources", ""]
+
+
 def call_claude(prompt: str, model="sonnet", system_file=PROMPT_FILE, timeout=CALL_TIMEOUT, system_text=None) -> str:
     """Run `claude -p` and return the model's text (the `result` field of the json envelope)."""
     system = system_text if system_text is not None else Path(system_file).read_text()
-    cmd = [paths.claude_bin(), "-p", "--output-format", "json", "--model", model, "--system-prompt", system]
+    cmd = [paths.claude_bin(), "-p", "--output-format", "json", "--model", model, "--system-prompt", system, *NO_TOOLS_FLAGS]
     r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout)
     if r.returncode != 0:
         raise RuntimeError(f"claude exited {r.returncode}: {(r.stderr or r.stdout)[:200]}")

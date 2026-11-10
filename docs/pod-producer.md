@@ -32,4 +32,6 @@ Replay without audio: `podproducer run my-show --no-capture --transcript FILE --
 
 ## Privacy and consent
 
-Tell guests the show is transcribed by an AI assistant that gives the host private cues. Transcripts and cues stay under `~/.local/state/podproducer` (mode 700). The transcript text is sent to Claude to generate cues. Audio segments are deleted after transcription unless you pass `--keep-audio`.
+Tell guests the show is transcribed by an AI assistant that gives the host private cues. Speech to text runs locally (whisper.cpp). Audio stays on the Mac and is deleted after transcription unless you pass `--keep-audio`. The transcript and cues are saved locally under `~/.local/state/podproducer` (mode 700). Transcript windows are sent to Anthropic through the Claude CLI to generate cues and recaps. Make sure guests know that.
+
+Sessions are kept until you remove them. `podproducer sessions` lists them with sizes. `podproducer sessions prune --older-than 30` shows what would be deleted (a dry run); add `--yes` to delete. `podproducer sessions --delete NAME --yes` removes one session. Nothing is ever deleted without `--yes`.

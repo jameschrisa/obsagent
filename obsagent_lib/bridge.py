@@ -26,7 +26,7 @@ from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import __version__, paths, plans, show, ws
+from . import __version__, panelguard, paths, plans, show, ws
 
 HOST = "127.0.0.1"
 PORT = 8767
@@ -40,13 +40,31 @@ AGENTS = {"obsagent": "/obsagent", "pod-producer": "/pod-producer"}
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 UUID_RE = re.compile(r"^[0-9a-fA-F-]{8,64}$")
 
-CHAT_ALLOWED_TOOLS = "Read,Grep,Glob,Bash(obsagent *),Bash(podproducer *)"
-CHAT_DENIED_TOOLS = ",".join([
-    "Bash(obsagent ws start-stream *)", "Bash(obsagent ws stop-stream *)", "Bash(obsagent ws start-stream)",
-    "Bash(obsagent ws stop-stream)", "Bash(obsagent guests invite *--send*)", "Bash(obsagent stream set-key *)",
-])
+# Chat is read-only. Layer 1: claude permission rules (explicit allowlist, deny list for secrets).
+# Layer 2: OBSAGENT_CALLER=panel makes both CLIs refuse every state-changing command (obsagent_lib/panelguard.py).
+_READ_CMDS = [
+    "obsagent doctor", "obsagent ws status", "obsagent ws scenes", "obsagent ws inputs", "obsagent ws snapshot",
+    "obsagent ws monitor", "obsagent stream list-keys", "obsagent plan show", "obsagent plan validate",
+    "obsagent plan export", "obsagent preset list", "obsagent preset show", "obsagent guests list",
+    "obsagent guests links", "obsagent guests senders", "obsagent preflight", "obsagent triage collect",
+    "obsagent serve status", "obsagent youtube status", "podproducer check", "podproducer sessions",
+]
+_DRY_RUN_CMDS = ["obsagent plan apply", "obsagent profile apply"]
+CHAT_ALLOW_RULES = ["Read", "Grep", "Glob"]
+for _c in _READ_CMDS:
+    CHAT_ALLOW_RULES += [f"Bash({_c})", f"Bash({_c} *)"]
+for _c in _DRY_RUN_CMDS:
+    CHAT_ALLOW_RULES += [f"Bash({_c} * --dry-run)", f"Bash({_c} --dry-run *)"]
+CHAT_ALLOWED_TOOLS = ",".join(CHAT_ALLOW_RULES)
+CHAT_SECRET_PATHS = ["~/.config/obsagent/**", "~/.local/state/podproducer/**", "~/Library/Keychains/**"]
+CHAT_DENIED_TOOLS = ",".join(
+    [f"{t}({p})" for p in CHAT_SECRET_PATHS for t in ("Read", "Grep", "Glob")]
+    + ["Bash(obsagent ws start-stream *)", "Bash(obsagent ws stop-stream *)", "Bash(obsagent stream set-key *)",
+       "Bash(obsagent guests invite *)", "Bash(podproducer run *)"])
 CHAT_NOTE = ("This request came from the Chrome side panel. Do not start or stop a stream and do not send email "
-             "or invites: the panel buttons do that. You may read state, run checks and explain.")
+             "or invites: the panel buttons do that. You may read state, run checks and explain. "
+             "You are already in the repo directory. Run each command on its own as a bare `obsagent ...` or "
+             "`podproducer ...` call: no `cd`, no full paths, no `&&`, pipes or redirects, or it will be denied.")
 
 
 class ApiError(Exception):
@@ -134,9 +152,15 @@ class Bridge:
         """argv for our own CLIs, run with the same interpreter and dependencies as this process."""
         return [sys.executable, str(self.repo / tool), *args]
 
+    @staticmethod
+    def chat_denied_tools() -> str:
+        """Static deny rules plus the live bridge-token directory (it moves when OBSAGENT_CONFIG_DIR is set)."""
+        extra = [f"{t}(/{token_path().parent.resolve()}/**)" for t in ("Read", "Grep", "Glob")]
+        return ",".join([CHAT_DENIED_TOOLS, *extra])
+
     def claude_cmd(self, prompt: str, session_id: str | None) -> list[str]:
         cmd = [self.claude_bin(), "-p", "--output-format", "json", "--permission-mode", "dontAsk",
-               "--allowedTools", CHAT_ALLOWED_TOOLS, "--disallowedTools", CHAT_DENIED_TOOLS,
+               "--allowedTools", CHAT_ALLOWED_TOOLS, "--disallowedTools", self.chat_denied_tools(),
                "--append-system-prompt", CHAT_NOTE]
         if session_id:
             cmd += ["--resume", session_id]
@@ -297,14 +321,23 @@ class Bridge:
             view["result"] = {k: (self.scrub(v) if isinstance(v, str) else v) for k, v in job.result.items()}
         return view
 
-    def run_cmd(self, job: Job, argv: list[str], timeout: float = 900, cwd: Path | None = None, capture: bool = False) -> int:
+    @staticmethod
+    def child_env(panel: bool = False) -> dict:
+        """Environment for child processes. OBSAGENT_CALLER=panel only for the chat child, never for button jobs."""
+        env = {k: v for k, v in os.environ.items() if k != panelguard.ENV}
+        if panel:
+            env[panelguard.ENV] = panelguard.VALUE
+        return env
+
+    def run_cmd(self, job: Job, argv: list[str], timeout: float = 900, cwd: Path | None = None, capture: bool = False,
+                panel: bool = False) -> int:
         """Run argv and stream output lines into the job. Returns the exit code.
 
         capture=False finishes the job itself. capture=True keeps stdout in job.captured and leaves the job open
         so the caller can parse it and finish with a result."""
         try:
             p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                 text=True, cwd=str(cwd or self.repo))
+                                 text=True, cwd=str(cwd or self.repo), env=self.child_env(panel))
         except OSError as e:
             job.log(f"could not start: {e}")
             job.captured = ""
@@ -440,7 +473,8 @@ class Bridge:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         try:
-            p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=fd, stderr=subprocess.STDOUT, start_new_session=True)
+            p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=fd, stderr=subprocess.STDOUT, start_new_session=True,
+                                 env=Bridge.child_env())
         finally:
             os.close(fd)
         threading.Thread(target=p.wait, daemon=True).start()  # reap when it exits
@@ -510,7 +544,7 @@ class Bridge:
         argv = self.claude_cmd(prompt, sid)
 
         def fn(job: Job):
-            rc = self.run_cmd(job, argv, timeout=600, capture=True)
+            rc = self.run_cmd(job, argv, timeout=600, capture=True, panel=True)
             raw = job.captured
             text, new_sid, ok = "", sid, False
             try:
