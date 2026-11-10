@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OBS Show Panel</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<main id="app">
+
+  <section id="view-pair" class="view" hidden>
+    <h1>Connect to your Mac</h1>
+    <p>Paste the pairing token once. It stays in this browser profile.</p>
+    <p>In Terminal, run <code>obsagent serve token</code> and copy what it prints.</p>
+    <form id="pair-form">
+      <label for="token">Pairing token</label>
+      <input id="token" type="password" autocomplete="off" spellcheck="false" required>
+      <button type="submit" class="primary" id="pair-btn">Connect</button>
+    </form>
+    <p id="pair-msg" class="msg" role="status"></p>
+  </section>
+
+  <section id="view-down" class="view" hidden>
+    <h1>Helper not running</h1>
+    <p>The panel cannot reach the obsagent helper on this Mac. Start it from Terminal with:</p>
+    <p><code>obsagent serve install</code></p>
+    <p>That starts the helper now and again at every login. To run it once in a window instead, use <code>obsagent serve</code>.</p>
+    <button type="button" id="retry-btn">Try again</button>
+  </section>
+
+  <div id="view-main" class="view" hidden>
+
+    <section aria-labelledby="h-status" class="card">
+      <h2 id="h-status">Status</h2>
+      <div id="live-row" class="live-row">
+        <span id="live-badge" class="badge off">Offline</span>
+        <span id="live-timer" class="timer" aria-live="off"></span>
+      </div>
+      <dl class="facts">
+        <dt>OBS</dt><dd id="f-obs">-</dd>
+        <dt>WebSocket</dt><dd id="f-ws">-</dd>
+        <dt>Scene</dt><dd id="f-scene">-</dd>
+        <dt>Profile</dt><dd id="f-profile">-</dd>
+        <dt>Stream key</dt><dd id="f-key">-</dd>
+        <dt>Producer</dt><dd id="f-producer">-</dd>
+      </dl>
+      <button type="button" id="launch-btn" class="act" hidden>Launch OBS</button>
+      <p id="launch-msg" class="msg" role="status"></p>
+    </section>
+
+    <section aria-labelledby="h-show" class="card">
+      <h2 id="h-show">Show</h2>
+      <label for="plan">Show plan</label>
+      <select id="plan"></select>
+      <div class="row">
+        <button type="button" id="dry-btn" class="act">Dry run</button>
+        <button type="button" id="apply-btn" class="act">Apply</button>
+        <button type="button" id="pre-btn" class="act">Preflight</button>
+      </div>
+      <p class="hint">Apply becomes available after a dry run of the same plan finishes without errors.</p>
+      <div id="pre-summary" class="chips" hidden></div>
+      <pre id="show-out" class="out" tabindex="0" aria-label="Output" hidden></pre>
+    </section>
+
+    <section aria-labelledby="h-scenes" class="card">
+      <h2 id="h-scenes">Scenes</h2>
+      <div id="scenes" class="scene-grid"></div>
+      <p id="scene-msg" class="msg" role="status"></p>
+    </section>
+
+    <section aria-labelledby="h-prod" class="card">
+      <h2 id="h-prod">Producer</h2>
+      <label for="max-min">Stop after (minutes)</label>
+      <input id="max-min" type="number" min="1" max="600" step="1" value="90" inputmode="numeric">
+      <p class="hint">Also stops by itself after 15 minutes with no speech. Uses the show plan chosen above.</p>
+      <div class="row">
+        <button type="button" id="prod-start" class="act">Start producer</button>
+        <button type="button" id="prod-stop" class="act">Stop producer</button>
+      </div>
+      <p><a id="dock-link" href="http://127.0.0.1:8765" target="_blank" rel="noopener noreferrer">Open cue dock</a></p>
+      <p id="prod-msg" class="msg" role="status"></p>
+    </section>
+
+    <section aria-labelledby="h-live" class="card">
+      <h2 id="h-live">Go live</h2>
+      <p class="hint">Starting sends your video to YouTube right away. You confirm the stream key first.</p>
+      <div class="row">
+        <button type="button" id="golive-btn" class="act danger">Go Live</button>
+        <button type="button" id="stop-btn" class="act">Stop Stream</button>
+      </div>
+      <p id="live-msg" class="msg" role="status"></p>
+    </section>
+
+    <section aria-labelledby="h-ask" class="card">
+      <h2 id="h-ask">Ask the agent</h2>
+      <label for="agent">Agent</label>
+      <select id="agent">
+        <option value="obsagent">obsagent (OBS and the stream)</option>
+        <option value="pod-producer">pod producer (cues and show prep)</option>
+      </select>
+      <label for="ask-text">Your request</label>
+      <textarea id="ask-text" rows="4" placeholder="For example: why is the guest tile black?"></textarea>
+      <div class="row">
+        <button type="button" id="ask-btn" class="act primary">Send</button>
+        <button type="button" id="new-chat" class="act">New conversation</button>
+      </div>
+      <div id="ask-out" class="reply" tabindex="0" aria-live="polite" hidden></div>
+    </section>
+
+    <footer>
+      <button type="button" id="unpair" class="link">Forget token</button>
+    </footer>
+  </div>
+
+</main>
+
+<dialog id="confirm" aria-labelledby="c-title">
+  <form method="dialog" id="confirm-form">
+    <h2 id="c-title"></h2>
+    <div id="c-body"></div>
+    <div class="row">
+      <button type="button" id="c-cancel">Cancel</button>
+      <button type="button" id="c-ok" class="primary"></button>
+    </div>
+  </form>
+</dialog>
+
+<script src="panel.js"></script>
+</body>
+</html>

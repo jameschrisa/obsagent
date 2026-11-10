@@ -22,7 +22,7 @@ The guests track is whatever OBS sends to BlackHole.
 1. `podproducer prep my-show` adds a `producer:` block to `plans/my-show.yaml`. Fill in topics, goals, segments with target minutes, must_ask, avoid, tone, and guest bios.
 2. `podproducer run my-show` (options: `--interval 40`, `--model sonnet`, `--keep-audio`).
 3. In OBS: Docks > Custom Browser Docks, name "Producer", URL `http://127.0.0.1:8765`. The dock is for the host only. Never add it to a scene.
-4. Mark cues Done or Skip as you go. Ctrl-C stops everything.
+4. Mark cues Done or Skip as you go. Ctrl-C stops everything. The run also stops by itself after `--max-minutes` (default 120, 0 for no limit) or after `--idle-minutes` with no transcribed speech on either track (default 15, 0 turns it off). The Chrome panel's Stop producer button ends it too (`obsagent serve`, see chrome-extension.md).
 
 Replay without audio: `podproducer run my-show --no-capture --transcript FILE --once`.
 

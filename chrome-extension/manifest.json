@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "OBS Show Panel",
+  "version": "0.1.0",
+  "description": "Run your OBS show from a Chrome side panel. Talks only to the obsagent helper on this Mac.",
+  "minimum_chrome_version": "116",
+  "permissions": ["sidePanel", "storage"],
+  "host_permissions": ["http://127.0.0.1:8767/*"],
+  "background": { "service_worker": "background.js" },
+  "side_panel": { "default_path": "panel.html" },
+  "action": { "default_title": "Open the OBS show panel" },
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src http://127.0.0.1:8767"
+  }
+}

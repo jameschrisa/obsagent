@@ -94,6 +94,7 @@ class Transcriber(threading.Thread):
         self.done = {t: -1 for t in TRACKS}
         self.last_text = {t: "" for t in TRACKS}
         self.transcript = self.dir / "transcript.jsonl"
+        self.last_speech = time.monotonic()  # idle clock starts at launch; reset by any transcribed line
 
     def process_segment(self, track: str, idx: int, wav: Path) -> None:
         rms = wav_rms(wav)
@@ -106,6 +107,7 @@ class Transcriber(threading.Thread):
         if text:
             self.last_text[track] = text
             append_line(self.transcript, idx * SEGMENT_SECONDS, (idx + 1) * SEGMENT_SECONDS, TRACKS[track], text)
+            self.last_speech = time.monotonic()
         if not self.keep_audio:
             try:
                 wav.unlink()

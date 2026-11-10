@@ -1,7 +1,7 @@
 ---
 name: obsagent
 description: OBS Studio streaming agent for this Mac. Sets up, configures, tests, triages and troubleshoots OBS for YouTube Live (and Zoom webinars via custom RTMP or the virtual camera). Use for "/obsagent", "obsagent", OBS setup, encoder or bitrate settings, stream keys, dropped frames, encoding overload, black screen capture, no audio, YouTube not receiving data, pre-show checks, or pre-planning a show in a Claude Docs plan.
-argument-hint: "[doctor | setup | prep <plan> | plan <name> | guests | scene <name> | snapshot [scene] | preflight [plan] | live | triage <symptom> | postshow [plan] | zoom] or a question"
+argument-hint: "[doctor | serve | setup | prep <plan> | plan <name> | guests | scene <name> | snapshot [scene] | preflight [plan] | live | triage <symptom> | postshow [plan] | zoom] or a question"
 ---
 
 # obsagent
@@ -30,6 +30,7 @@ You run OBS Studio 33 on James's MacBook Pro (M1 Pro, 16 GB) for YouTube Live. Z
 | `triage <symptom>` | Start with `obsagent triage collect --json` (masked log matches, stats, status, settings, crashes). Then follow the decision tree in knowledge/troubleshooting.md and give the cause and the fix. |
 | `postshow [plan]` | `obsagent show postshow <plan>`. Offer `--rotate` so old guest links die; if used, remind the user to re-run `plan apply` and re-invite. |
 | `zoom` | knowledge/zoom.md. Two routes: custom live streaming (preset `zoom-720p30`) or OBS Virtual Camera as the Zoom camera. |
+| `serve` or `panel` | The Chrome side panel helper. `obsagent serve install` starts it at login, `obsagent serve status` checks it, `obsagent serve token` prints the pairing token (the user runs that in Terminal, never print or relay the token), `obsagent serve uninstall` removes it. Read docs/chrome-extension.md. The panel's Go Live, Stop Stream and email actions belong to the user: when a request comes from the panel, do not start or stop streams or send email. |
 | anything else | Answer from the knowledge base, then offer the CLI step that applies it. |
 
 ## Stream keys (more than one YouTube account)

@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import __version__, doctor, guests, mailer, paths, plans, profiles, show, stream, ws
+from . import __version__, bridge, doctor, guests, mailer, paths, plans, profiles, show, stream, ws
 
 
 class CliError(Exception):
@@ -137,6 +137,11 @@ def build_parser() -> argparse.ArgumentParser:
     pfl = sub.add_parser("preflight", parents=[common], help="pass/warn/fail readiness rows for a plan (never starts a stream)")
     pfl.add_argument("plan")
     pfl.add_argument("--record", type=int, metavar="SECONDS", default=0, help="record a test clip and monitor it")
+
+    sv = sub.add_parser("serve", parents=[common], help="local helper for the Chrome side panel (foreground by default)")
+    sv.add_argument("action", nargs="?", choices=["install", "uninstall", "status", "token"],
+                    help="install/uninstall the login item, show status, or print the pairing token (TTY only)")
+    sv.add_argument("--port", type=int, default=bridge.PORT, help=f"port on 127.0.0.1 (default {bridge.PORT})")
 
     tr = sub.add_parser("triage").add_subparsers(dest="sub", required=True)
     tr.add_parser("collect", parents=[common], help="gather logs, stats, settings and crashes into one masked report")
@@ -657,7 +662,30 @@ def cmd_show(a):
     return 0
 
 
-COMMANDS = {"preflight": cmd_preflight, "triage": cmd_triage, "show": cmd_show, "doctor": cmd_doctor, "ws": cmd_ws, "preset": cmd_preset, "profile": cmd_profile,
+def cmd_serve(a):
+    if a.action is None:
+        return bridge.serve_forever(a.port)
+    if a.action == "token":
+        if not sys.stdout.isatty():
+            raise CliError("Refusing to print the token when stdout is not a terminal. Run `obsagent serve token` in Terminal.", 2)
+        print(bridge.load_or_create_token())
+        return 0
+    if a.action == "install":
+        res = bridge.install(a.port)
+        out(res, a, kv_text)
+        if not res["installed"]:
+            return 1
+        if not a.json:
+            print("Next: run `obsagent serve token` in Terminal and paste it into the Chrome panel.")
+        return 0
+    if a.action == "uninstall":
+        out(bridge.uninstall(), a, kv_text)
+        return 0
+    out(bridge.status(a.port), a, kv_text)
+    return 0
+
+
+COMMANDS = {"serve": cmd_serve, "preflight": cmd_preflight, "triage": cmd_triage, "show": cmd_show, "doctor": cmd_doctor, "ws": cmd_ws, "preset": cmd_preset, "profile": cmd_profile,
             "stream": cmd_stream, "plan": cmd_plan, "guests": cmd_guests, "youtube": cmd_youtube}
 
 

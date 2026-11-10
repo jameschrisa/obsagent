@@ -129,7 +129,7 @@ a { color: #0b5cad; }
 <h2>8. After the show</h2>
 <ol>
 <li>End the broadcast in YouTube Studio, then stop streaming in OBS.</li>
-<li>Stop the producer with Ctrl-C in its terminal.</li>
+<li>Stop the producer with Ctrl-C in its terminal, or with Stop producer in the Chrome panel. It also stops by itself after its time limit (120 minutes by default) or 15 minutes with no speech.</li>
 <li>Write the recap: <code>podproducer sessions</code> to find the session, then <code>podproducer recap SESSION --show talking-head</code>. It writes <code>recap.md</code> with a summary, 5-8 clip moments with timestamps, show notes and three title ideas.</li>
 <li>Wrap up the OBS side: <code>/obsagent postshow</code>, or <code>obsagent show postshow talking-head</code>. Add <code>--rotate</code> if the guests will not return. That kills every old guest link, so re-run <code>obsagent plan apply talking-head</code> and re-invite if you need them again.</li>
 <li>Remove guests you no longer need: <code>obsagent guests remove talking-head "Ann"</code>. Their solo scene stays until you delete it in OBS.</li>
@@ -165,6 +165,18 @@ a { color: #0b5cad; }
 <li><code>obsagent show postshow talking-head</code> (add <code>--rotate</code> if guests will not return).</li>
 <li>Remove guests you no longer need. Check the YouTube replay.</li>
 </ul>
+
+<h2>10. Running the show from Chrome</h2>
+<p>The Chrome side panel does the routine steps with buttons, so you do not need Terminal open during the show. It talks to a small helper on this Mac (<code>obsagent serve</code>). Setup is once: <code>obsagent serve install</code>, load the <code>chrome-extension</code> folder in <code>chrome://extensions</code>, then paste the token from <code>obsagent serve token</code>. Details are in <code>docs/chrome-extension.md</code>.</p>
+<ul>
+<li>Status shows whether OBS is open, the LIVE badge with a timer, the scene, the profile and the stream key as a name plus its last 4 characters.</li>
+<li>Show runs a dry run, applies the plan after a clean dry run, and runs preflight with a pass, warn and fail count.</li>
+<li>Scenes switches the program scene. The current scene is highlighted.</li>
+<li>Producer starts and stops the pod producer. It stops by itself after the minutes you set, or after 15 minutes with no speech. The cue dock link opens the page for your OBS dock.</li>
+<li>Go Live asks you to confirm the key name and last 4 characters, and reminds you to check YouTube Studio. Stop Stream asks first too.</li>
+<li>Ask the agent sends a request to the obsagent or pod producer skill. It can read and run checks. It cannot start or stop the stream or send email.</li>
+</ul>
+<p>If the panel says the helper is not running, run <code>obsagent serve install</code> in Terminal. Everything the panel does is also available as a Terminal command.</p>
 
 </div>
 </body>

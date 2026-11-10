@@ -211,3 +211,62 @@ def test_no_dashes_in_sources():
     for p in list((root / "podproducer_lib").rglob("*")) + [root / "docs" / "pod-producer.md"]:
         if p.is_file() and p.suffix in (".py", ".md"):
             assert not any(c in p.read_text() for c in bad), p
+
+
+# ---- auto-stop ----
+
+def test_stop_reason_limits():
+    assert cli.stop_reason(0, 0, 100, 120, 15) is None
+    assert "time limit" in cli.stop_reason(0, 7000, 7200, 120, 15)
+    assert "no speech" in cli.stop_reason(0, 0, 900, 120, 15)
+    assert cli.stop_reason(0, 0, 10 ** 6, 0, 0) is None  # both disabled
+    assert cli.stop_reason(0, 0, 900, 120, 0) is None    # idle off
+    assert cli.stop_reason(0, 800, 900, 120, 15) is None  # speech 100 s ago
+
+
+def test_watch_stops_on_idle_and_max():
+    import threading
+    t = [0.0]
+    ev = threading.Event()
+    ev.wait = lambda timeout=None: t.__setitem__(0, t[0] + 60)
+    why = cli.watch(ev, lambda: 0.0, 120, 15, clock=lambda: t[0])
+    assert "no speech" in why and t[0] >= 900
+    t[0] = 0.0
+    why = cli.watch(ev, lambda: t[0], 10, 15, clock=lambda: t[0])  # speech always fresh -> time limit
+    assert "time limit" in why
+    ev.set()
+    assert cli.watch(ev, None, 10, 15) is None
+
+
+def test_run_parser_defaults():
+    a = cli.build_parser().parse_args(["run", "show"])
+    assert (a.max_minutes, a.idle_minutes) == (120, 15)
+    a = cli.build_parser().parse_args(["run", "show", "--max-minutes", "5", "--idle-minutes", "0"])
+    assert (a.max_minutes, a.idle_minutes) == (5, 0)
+
+
+def test_transcriber_tracks_last_speech(tmp_path, monkeypatch):
+    tr = transcribe.Transcriber(tmp_path, tmp_path / "m.bin", whisper=lambda w, m: "hello there friend")
+    before = tr.last_speech
+    make_wav(tmp_path / "host_00000.wav", 6000)
+    import time as _t
+    _t.sleep(0.01)
+    tr.process_segment("host", 0, tmp_path / "host_00000.wav")
+    assert tr.last_speech > before
+    # silence does not reset the idle clock
+    mid = tr.last_speech
+    make_wav(tmp_path / "host_00001.wav", 0)
+    tr.process_segment("host", 1, tmp_path / "host_00001.wav")
+    assert tr.last_speech == mid
+
+
+def test_run_replay_prints_stop_help(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("PODPRODUCER_STATE", str(tmp_path / "st"))
+    monkeypatch.setenv("PODPRODUCER_PLANS_DIR", str(tmp_path))
+    tf = tmp_path / "t.jsonl"
+    tf.write_text(json.dumps(TRANSCRIPT[0]) + "\n")
+    monkeypatch.setattr(cli.brain.Brain, "run", lambda self: None)
+    monkeypatch.setattr(cli, "watch", lambda *a, **k: "time limit reached (1 min)")
+    rc = cli.main(["run", "x", "--no-capture", "--transcript", str(tf), "--no-dock", "--max-minutes", "1"])
+    out = capsys.readouterr().out
+    assert rc == 0 and "Ctrl+C" in out and "obsagent" in out and "Stopping: time limit" in out

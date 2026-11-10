@@ -48,6 +48,13 @@ OBS is set up for a YouTube talking-head show with up to 4 remote guests. Guest 
 - **Pod producer:** whisper model `~/.local/share/podproducer/models/ggml-small.en.bin`. Live run 2026-11-02 from 09:06 until stopped at handoff: session `~/.local/state/podproducer/sessions/20261102-090652/` with 786 transcript lines (all Host) and 376 cues. Capture, transcription, cue generation and the dock (HTTP 200 on port 8765) all worked. Cues were on topic and playful. That session holds private room conversation that was not a show; ask the user before keeping or deleting it.
 - **Machine:** M1 Pro, 16 GB, macOS 14.6.1 (Homebrew Tier 3), about 393 Mbps upload. The StreamCam dropped off USB once on 2026-11-02; replugging fixed it.
 
+## Chrome panel (added 2026-11-09)
+
+- Helper `obsagent serve` (obsagent_lib/bridge.py) on 127.0.0.1:8767 (8766 is taken by another app). Installed at login: `~/Library/LaunchAgents/com.obsagent.bridge.plist`, log `~/Library/Logs/obsagent-bridge.log`. Token in `~/.config/obsagent/bridge-token` (0600); `obsagent serve token` prints it in Terminal.
+- Extension in `chrome-extension/` (MV3 side panel), loaded unpacked. Guide: `docs/chrome-extension.md`.
+- Verified: health, status, 401 without token, a real chat job through `claude -p` (read-only question answered, session id returned), and a chat request to start a stream was refused. Not verified: the panel UI loaded in Chrome, Go Live through the panel, producer start/stop through the panel with real ffmpeg.
+- Pod producer now stops on `--max-minutes` (default 120) and `--idle-minutes` (default 15).
+
 ## Open items, in order
 
 1. **Holistiplan unlisted test stream** (Next steps 1), then the key reset.

@@ -3,7 +3,9 @@ import argparse
 import configparser
 import json
 import shutil
+import signal
 import subprocess
+import threading
 import sys
 import tempfile
 import time
@@ -115,6 +117,31 @@ def _load_brief(show):
     return plan.load_brief(p)
 
 
+DEFAULT_MAX_MINUTES = 120
+DEFAULT_IDLE_MINUTES = 15
+STOP_HELP = "To stop: press Ctrl+C here, or use the Stop button in the obsagent Chrome panel (`obsagent serve`)."
+
+
+def stop_reason(started, last_speech, now, max_minutes, idle_minutes):
+    """Why the run should end now, or None. Times are monotonic seconds; a limit of 0 disables it."""
+    if max_minutes and now - started >= max_minutes * 60:
+        return f"time limit reached ({max_minutes} min)"
+    if idle_minutes and now - last_speech >= idle_minutes * 60:
+        return f"no speech heard for {idle_minutes} min"
+    return None
+
+
+def watch(stop_evt, get_last_speech, max_minutes, idle_minutes, clock=time.monotonic, tick=1.0):
+    """Block until stop_evt is set or a limit trips. Returns the reason string, or None if stopped externally."""
+    started = clock()
+    while not stop_evt.is_set():
+        why = stop_reason(started, get_last_speech() if get_last_speech else started, clock(), max_minutes, idle_minutes)
+        if why:
+            return why
+        stop_evt.wait(tick)
+    return None
+
+
 def cmd_run(a) -> int:
     print(CONSENT)
     brief = _load_brief(a.show)
@@ -156,8 +183,24 @@ def cmd_run(a) -> int:
             for c in b.step(store.replay_elapsed):
                 print(f"[cue p{c['priority']}] ({c['type']}) {c['text']}")
             return 0
-        print("Running. Ctrl-C to stop.")
-        b.run()
+        limits = []
+        if a.max_minutes:
+            limits.append(f"stops by itself after {a.max_minutes} min")
+        if a.idle_minutes and trans:
+            limits.append(f"or after {a.idle_minutes} min with no speech")
+        print("Running" + (" (" + ", ".join(limits) + ")" if limits else " with no time limit") + ". " + STOP_HELP)
+        stop_evt = threading.Event()
+        old = signal.signal(signal.SIGTERM, lambda *_: stop_evt.set()) if threading.current_thread() is threading.main_thread() else None
+        bt = threading.Thread(target=b.run, daemon=True)
+        bt.start()
+        try:
+            why = watch(stop_evt, (lambda: trans.last_speech) if trans else None, a.max_minutes,
+                        a.idle_minutes if trans else 0)
+            if why:
+                print(f"\nStopping: {why}.")
+        finally:
+            if old is not None:
+                signal.signal(signal.SIGTERM, old)
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:
@@ -232,6 +275,10 @@ def build_parser():
     s.add_argument("--no-capture", action="store_true", help="replay mode, use with --transcript")
     s.add_argument("--transcript")
     s.add_argument("--no-dock", action="store_true")
+    s.add_argument("--max-minutes", type=int, default=DEFAULT_MAX_MINUTES,
+                   help=f"stop after this many minutes (default {DEFAULT_MAX_MINUTES}, 0 = no limit)")
+    s.add_argument("--idle-minutes", type=int, default=DEFAULT_IDLE_MINUTES,
+                   help=f"stop after this many minutes with no transcribed speech on either track (default {DEFAULT_IDLE_MINUTES}, 0 = off)")
     s.add_argument("--once", action="store_true", help="one brain cycle then exit (replay and testing)")
     s.set_defaults(fn=cmd_run)
     s = sub.add_parser("recap", help="summary, highlights, show notes and titles for a session")
